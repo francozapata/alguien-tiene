@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { FiguShell } from "@/components/figus/FiguShell";
 import { calculateNeededFromOwned, getMyFiguBootstrap, saveFiguRequest } from "@/services/figus";
+import { stickerCode } from "@/lib/figus/catalog";
 
 export default function SolicitudPage() {
   const { user, loading } = useAuth();
