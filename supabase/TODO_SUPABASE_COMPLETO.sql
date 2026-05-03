@@ -1634,3 +1634,61 @@ alter table public.profiles add column if not exists free_usage_day date default
 -- Pro Total: $3.000/semana.
 -- Los links de pago se configuran en Vercel con variables NEXT_PUBLIC_MP_LINK_*
 -- =========================================================
+
+
+-- =========================================================
+-- MERCADO PAGO AUTOMATICO - ORDENES Y EVENTOS
+-- =========================================================
+create table if not exists public.subscription_orders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  plan_type text not null check (plan_type in ('PREMIUM','EXTRAS','PRO_TOTAL')),
+  amount numeric(12,2) not null,
+  currency text not null default 'ARS',
+  status text not null default 'CREATED',
+  external_reference text not null unique,
+  mp_preference_id text,
+  mp_payment_id text,
+  init_point text,
+  sandbox_init_point text,
+  payer_email text,
+  raw_payment jsonb,
+  metadata jsonb default '{}'::jsonb,
+  activated_at timestamptz,
+  expires_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists subscription_orders_user_id_idx on public.subscription_orders(user_id);
+create index if not exists subscription_orders_external_reference_idx on public.subscription_orders(external_reference);
+create index if not exists subscription_orders_mp_payment_id_idx on public.subscription_orders(mp_payment_id);
+
+create table if not exists public.subscription_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references public.profiles(id) on delete cascade,
+  plan_type text,
+  event_type text not null,
+  notes text,
+  metadata jsonb default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists subscription_events_user_id_idx on public.subscription_events(user_id);
+
+alter table public.subscription_orders enable row level security;
+alter table public.subscription_events enable row level security;
+
+drop policy if exists "Users can read own subscription orders" on public.subscription_orders;
+create policy "Users can read own subscription orders"
+on public.subscription_orders
+for select
+using (user_id in (select id from public.profiles where firebase_uid = auth.uid()::text));
+
+drop policy if exists "Users can read own subscription events" on public.subscription_events;
+create policy "Users can read own subscription events"
+on public.subscription_events
+for select
+using (user_id in (select id from public.profiles where firebase_uid = auth.uid()::text));
+
+-- Las inserciones/updates las hace el servidor con SUPABASE_SERVICE_ROLE_KEY.

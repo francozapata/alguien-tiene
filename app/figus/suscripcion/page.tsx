@@ -4,18 +4,51 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { FiguShell } from "@/components/figus/FiguShell";
-import { getBenefitDetails, getMySubscription, getPlanExpirationText, getPlanLabel, getPlanPaymentUrl, getPlanPeriod, getPlanPrice, PLAN_BENEFITS, PlanType, SubscriptionState } from "@/services/subscriptions";
+import { getBenefitDetails, getMySubscription, getPlanExpirationText, getPlanLabel, getPlanPeriod, getPlanPrice, PLAN_BENEFITS, PlanType, SubscriptionState } from "@/services/subscriptions";
 
 type PlanCardProps = {
   plan: PlanType;
   title: string;
   icon: string;
   helper: string;
+  userId?: string;
   dark?: boolean;
 };
 
-function PlanCard({ plan, title, icon, helper, dark = false }: PlanCardProps) {
-  const paymentUrl = getPlanPaymentUrl(plan);
+function PlanCard({ plan, title, icon, helper, userId, dark = false }: PlanCardProps) {
+  const [paying, setPaying] = useState(false);
+
+  async function startPayment() {
+    if (!userId) {
+      alert("Primero iniciá sesión con Google.");
+      return;
+    }
+
+    setPaying(true);
+
+    try {
+      const response = await fetch("/api/mp/create-preference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan, userId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.error || "No se pudo iniciar el pago.");
+      }
+
+      const url = data.init_point || data.sandbox_init_point;
+      if (!url) throw new Error("Mercado Pago no devolvió link de pago.");
+
+      window.location.href = url;
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "No se pudo iniciar el pago.");
+    } finally {
+      setPaying(false);
+    }
+  }
 
   const fakeSubscription = {
     plan_type: plan,
@@ -53,22 +86,14 @@ function PlanCard({ plan, title, icon, helper, dark = false }: PlanCardProps) {
         <button type="button" className={`mt-6 w-full rounded-2xl px-5 py-4 text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}>
           Plan actual gratis
         </button>
-      ) : paymentUrl ? (
-        <a
-          href={paymentUrl}
-          target="_blank"
-          rel="noreferrer"
-          className={`mt-6 block w-full rounded-2xl px-5 py-4 text-center text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}
-        >
-          Pagar {getPlanPrice(plan)}
-        </a>
       ) : (
         <button
           type="button"
-          className={`mt-6 w-full rounded-2xl px-5 py-4 text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}
-          onClick={() => alert("Falta configurar el link de pago de este plan en las variables de entorno.")}
+          disabled={paying}
+          onClick={startPayment}
+          className={`mt-6 w-full rounded-2xl px-5 py-4 text-sm font-black disabled:opacity-60 ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}
         >
-          Configurar link de pago
+          {paying ? "Abriendo Mercado Pago..." : `Pagar ${getPlanPrice(plan)}`}
         </button>
       )}
     </article>
@@ -78,11 +103,13 @@ function PlanCard({ plan, title, icon, helper, dark = false }: PlanCardProps) {
 export default function SuscripcionPage() {
   const { user, loading } = useAuth();
   const [subscription, setSubscription] = useState<SubscriptionState | null>(null);
+  const [profileId, setProfileId] = useState("");
 
   useEffect(() => {
     async function load() {
       if (!user) return;
       const data = await getMySubscription(user);
+      setProfileId(data.profile.id);
       setSubscription(data.subscription);
     }
     load();
@@ -120,6 +147,7 @@ export default function SuscripcionPage() {
 
       <section className="mt-6 grid gap-5 xl:grid-cols-4">
         <PlanCard
+          userId={profileId}
           plan="FREE"
           icon="🆓"
           title="Gratis"
@@ -127,6 +155,7 @@ export default function SuscripcionPage() {
         />
 
         <PlanCard
+          userId={profileId}
           plan="PREMIUM"
           icon="💎"
           title="Premium"
@@ -134,6 +163,7 @@ export default function SuscripcionPage() {
         />
 
         <PlanCard
+          userId={profileId}
           plan="EXTRAS"
           icon="⚡"
           title="Extras"
@@ -141,6 +171,7 @@ export default function SuscripcionPage() {
         />
 
         <PlanCard
+          userId={profileId}
           plan="PRO_TOTAL"
           icon="🏆"
           title="Pro Total"
