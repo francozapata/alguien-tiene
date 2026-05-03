@@ -501,25 +501,26 @@ async function applyCompletedFiguTrade(matchId: string) {
     .single();
 
   if (error) throw new Error(error.message);
-  if (!match || match.trade_applied) return;
+  const tradeMatch = match as any;
+  if (!tradeMatch || tradeMatch.trade_applied) return;
 
-  const user1Gets = uniqueNumbers(match.figus_user1_gets);
-  const user2Gets = uniqueNumbers(match.figus_user2_gets);
+  const user1Gets = uniqueNumbers(tradeMatch.figus_user1_gets);
+  const user2Gets = uniqueNumbers(tradeMatch.figus_user2_gets);
 
   const [user1Progress, user2Progress] = await Promise.all([
-    getAlbumProgress(match.user1_id, match.album_id),
-    getAlbumProgress(match.user2_id, match.album_id),
+    getAlbumProgress(tradeMatch.user1_id, tradeMatch.album_id),
+    getAlbumProgress(tradeMatch.user2_id, tradeMatch.album_id),
   ]);
 
   const user1Owned = uniqueNumbers([...(user1Progress?.owned_figus ?? []), ...user1Gets]);
   const user2Owned = uniqueNumbers([...(user2Progress?.owned_figus ?? []), ...user2Gets]);
 
-  await setAlbumOwnedFigus(match.user1_id, match.album_id, user1Owned);
-  await setAlbumOwnedFigus(match.user2_id, match.album_id, user2Owned);
+  await setAlbumOwnedFigus(tradeMatch.user1_id, tradeMatch.album_id, user1Owned);
+  await setAlbumOwnedFigus(tradeMatch.user2_id, tradeMatch.album_id, user2Owned);
 
   // Lo que user1 recibe sale de las repetidas de user2. Lo que user2 recibe sale de las repetidas de user1.
-  await decrementRepeated(match.user2_id, match.album_id, user1Gets);
-  await decrementRepeated(match.user1_id, match.album_id, user2Gets);
+  await decrementRepeated(tradeMatch.user2_id, tradeMatch.album_id, user1Gets);
+  await decrementRepeated(tradeMatch.user1_id, tradeMatch.album_id, user2Gets);
 
   const { error: updateError } = await supabase
     .from("figu_matches")
@@ -540,7 +541,8 @@ export async function saveFiguReview(firebaseUser: User, matchId: string, input:
   const profile = await getOrCreateProfile(firebaseUser);
   const { data: match, error: matchError } = await supabase.from("figu_matches").select("user1_id,user2_id").eq("id", matchId).or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`).single();
   if (matchError) throw new Error(matchError.message);
-  const reviewedUserId = match.user1_id === profile.id ? match.user2_id : match.user1_id;
+  const reviewMatch = match as any;
+  const reviewedUserId = reviewMatch.user1_id === profile.id ? reviewMatch.user2_id : reviewMatch.user1_id;
   const { error } = await supabase.from("figu_exchange_reviews").upsert({ match_id: matchId, reviewer_id: profile.id, reviewed_user_id: reviewedUserId, rating: Math.max(1, Math.min(5, input.rating)), fulfilled: input.fulfilled, no_show: input.noShow, good_condition: input.goodCondition, comment: input.comment.trim() || null }, { onConflict: "match_id,reviewer_id" });
   if (error) throw new Error(error.message);
 
@@ -561,7 +563,8 @@ export async function reportFiguUser(firebaseUser: User, matchId: string, reason
 
   if (matchError) throw new Error(matchError.message);
 
-  const reportedUserId = match.user1_id === profile.id ? match.user2_id : match.user1_id;
+  const reportMatch = match as any;
+  const reportedUserId = reportMatch.user1_id === profile.id ? reportMatch.user2_id : reportMatch.user1_id;
 
   const { error } = await supabase.from("user_reports").insert({
     reporter_id: profile.id,
@@ -584,9 +587,9 @@ export async function getFiguDashboard(firebaseUser: User) {
   ]);
 
   const wanted = new Map<number, number>();
-  for (const row of requests ?? []) for (const n of row.needed_figus ?? []) wanted.set(n, (wanted.get(n) ?? 0) + 1);
+  for (const row of (requests ?? []) as any[]) for (const n of (row.needed_figus ?? []) as number[]) wanted.set(Number(n), (wanted.get(Number(n)) ?? 0) + 1);
   const offered = new Map<number, number>();
-  for (const row of repeated ?? []) offered.set(row.figu_number, (offered.get(row.figu_number) ?? 0) + row.quantity);
+  for (const row of (repeated ?? []) as any[]) offered.set(Number(row.figu_number), (offered.get(Number(row.figu_number)) ?? 0) + Number(row.quantity ?? 0));
 
   const topWanted = [...wanted.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([figu, count]) => ({ figu, count }));
   const topOffered = [...offered.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([figu, count]) => ({ figu, count }));
@@ -600,7 +603,7 @@ export async function rejectFiguMatch(firebaseUser: User, matchId: string) {
 
   const { data: match, error: matchError } = await supabase
     .from("figu_matches")
-    .select("id,user1_id,user2_id")
+    .select("id,user1_id,user2_id,rejected_by_user1,rejected_by_user2")
     .eq("id", matchId)
     .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
     .single();
@@ -713,7 +716,7 @@ export async function getMyFiguChats(firebaseUser: User) {
     });
   }
 
-  const lastByMatch = new Map(lastMessages.map((message: any) => [message.match_id, message]));
+  const lastByMatch = new Map<string, any>(lastMessages.map((message: any) => [message.match_id, message]));
 
   const visibleMatches = (matches ?? []).filter((match: any) => {
     const amUser1 = match.user1_id === profile.id;
@@ -745,7 +748,8 @@ export async function hideFiguChat(firebaseUser: User, matchId: string) {
 
   if (matchError) throw new Error(matchError.message);
 
-  const amUser1 = match.user1_id === profile.id;
+  const hideMatch = match as any;
+  const amUser1 = hideMatch.user1_id === profile.id;
   const payload: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
