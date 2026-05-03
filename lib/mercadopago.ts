@@ -10,7 +10,7 @@ export const MP_PLAN_CONFIG: Record<PaidPlanType, {
 }> = {
   BASICO: {
     title: "Básico semanal - Alguien Tiene",
-    unitPrice: Number(process.env.NEXT_PUBLIC_MP_PRICE_BASICO || 0),
+    unitPrice: 900,
     days: 7,
     boosts: PLAN_BENEFITS.BASICO.boosts,
     instantSearches: PLAN_BENEFITS.BASICO.instantSearches,
@@ -18,7 +18,7 @@ export const MP_PLAN_CONFIG: Record<PaidPlanType, {
   },
   PLUS: {
     title: "Plus semanal - Alguien Tiene",
-    unitPrice: Number(process.env.NEXT_PUBLIC_MP_PRICE_PLUS || 0),
+    unitPrice: 1900,
     days: 7,
     boosts: PLAN_BENEFITS.PLUS.boosts,
     instantSearches: PLAN_BENEFITS.PLUS.instantSearches,
@@ -26,7 +26,7 @@ export const MP_PLAN_CONFIG: Record<PaidPlanType, {
   },
   PREMIUM: {
     title: "Premium semanal - Alguien Tiene",
-    unitPrice: Number(process.env.NEXT_PUBLIC_MP_PRICE_PREMIUM || 0),
+    unitPrice: 2500,
     days: 7,
     boosts: PLAN_BENEFITS.PREMIUM.boosts,
     instantSearches: PLAN_BENEFITS.PREMIUM.instantSearches,
