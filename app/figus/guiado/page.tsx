@@ -60,7 +60,13 @@ export default function CaminoGuiadoUsuariosPage() {
       await refreshMyFiguMatches(user);
       const [data, nearby] = await Promise.all([getMyMatches(user), getNearbyFiguUsers(user, radiusKm)]);
       setProfileId(data.profile.id);
-      setMatches((data.matches as FiguMatch[]).filter((m) => !["INTERCAMBIADO", "CANCELADO"].includes(m.status)));
+      setMatches((data.matches as FiguMatch[]).filter((m) => {
+        if (["INTERCAMBIADO", "CANCELADO"].includes(m.status)) return false;
+        const amUser1 = m.user1_id === data.profile.id;
+        if (amUser1 && m.rejected_by_user1) return false;
+        if (!amUser1 && m.rejected_by_user2) return false;
+        return true;
+      }));
       setNearbyUsers(nearby as FiguNearbyUser[]);
       setStatus(data.matches.length ? "Usuarios compatibles cargados." : nearby.length ? "No hay match perfecto, pero sí usuarios cercanos." : "Todavía no hay usuarios cercanos.");
     } catch (error) {

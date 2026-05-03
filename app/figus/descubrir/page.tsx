@@ -54,15 +54,24 @@ export default function DescubrirIntercambiosPage() {
       await refreshMyFiguMatches(user);
       const data = await getMyMatches(user);
       setProfileId(data.profile.id);
-      setMatches((data.matches as FiguMatch[]).filter((m) => {
+      const actionableMatches = (data.matches as FiguMatch[]).filter((m) => {
         if (["INTERCAMBIADO", "CANCELADO"].includes(m.status)) return false;
+
         const amUser1 = m.user1_id === data.profile.id;
+
+        // Si el usuario rechazó una propuesta, no debe volver al modo rápido.
         if (amUser1 && m.rejected_by_user1) return false;
         if (!amUser1 && m.rejected_by_user2) return false;
-        if (!m.mutual_interest && ((amUser1 && m.liked_by_user1) || (!amUser1 && m.liked_by_user2))) return false;
+
+        // Importante: NO ocultamos propuestas con like propio pendiente.
+        // La búsqueda guiada y el modo rápido deben partir de la misma disponibilidad.
+        // Si ya diste like, la tarjeta puede seguir visible hasta que haya match mutuo o se descarte.
         return true;
-      }));
-      setStatus("Revisá propuestas por figuritas compatibles y cercanía.");
+      });
+
+      setMatches(actionableMatches);
+      setIndex(0);
+      setStatus(actionableMatches.length ? "Revisá propuestas por figuritas compatibles y cercanía." : "No hay propuestas disponibles para modo rápido.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "No se pudo cargar.");
     }
@@ -147,8 +156,12 @@ export default function DescubrirIntercambiosPage() {
         <section className="rounded-[2rem] bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
           <h2 className="text-3xl font-black text-[#0D1B2A]">No hay más propuestas por ahora</h2>
           <p className="mt-2 text-sm font-semibold text-slate-500">{status}</p>
+          <p className="mx-auto mt-2 max-w-xl text-xs font-bold leading-5 text-slate-400">
+            Si en búsqueda manual ves usuarios compatibles, tocá “Revisar de nuevo”. El modo rápido ahora usa el mismo criterio base que usuarios cercanos.
+          </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <button onClick={() => { setDiscarded([]); setIndex(0); load(); }} className="rounded-2xl bg-[#0D1B2A] px-5 py-3 text-sm font-black text-white">Revisar de nuevo</button>
+            <Link href="/figus/guiado" className="rounded-2xl bg-[#22C55E] px-5 py-3 text-sm font-black text-white">Ver usuarios cercanos</Link>
             <Link href="/figus/solicitud" className="rounded-2xl bg-[#2563EB] px-5 py-3 text-sm font-black text-white">Ajustar solicitud</Link>
           </div>
         </section>
