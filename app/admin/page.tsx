@@ -294,9 +294,9 @@ export default function AdminPage() {
     const days = Number(daysRaw || 7);
     if (!Number.isFinite(days) || days <= 0) return;
 
-    const boostsRaw = prompt("Boosts disponibles:", planType === "PRO_TOTAL" ? "10" : planType === "EXTRAS" ? "3" : "0");
-    const instantRaw = prompt("Búsquedas instantáneas disponibles:", planType === "PRO_TOTAL" ? "999" : planType === "EXTRAS" ? "5" : "0");
-    const radarRaw = prompt("Radar cercano disponible:", planType === "PRO_TOTAL" ? "999" : planType === "EXTRAS" ? "3" : "0");
+    const boostsRaw = prompt("Boosts diarios disponibles:", planType === "PRO_TOTAL" || planType === "EXTRAS" ? "3" : "0");
+    const instantRaw = prompt("Búsquedas instantáneas diarias disponibles:", planType === "PRO_TOTAL" || planType === "EXTRAS" ? "5" : "0");
+    const radarRaw = prompt("Radar cercano diario disponible:", planType === "PRO_TOTAL" || planType === "EXTRAS" ? "10" : "0");
     const notes = prompt("Nota interna del beneficio:", `Otorgado manualmente por admin: ${planType}`);
 
     try {

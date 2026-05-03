@@ -4,6 +4,56 @@ import { getOrCreateProfile } from "@/services/profiles";
 
 export type PlanType = "FREE" | "PREMIUM" | "EXTRAS" | "PRO_TOTAL";
 
+export const PLAN_PRICES: Record<PlanType, {
+  priceLabel: string;
+  periodLabel: string;
+  paymentEnvKey?: string;
+  fallbackPaymentUrl?: string;
+}> = {
+  FREE: {
+    priceLabel: "$0",
+    periodLabel: "se renueva cada día",
+  },
+  PREMIUM: {
+    priceLabel: "$2.000",
+    periodLabel: "por semana",
+    paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PREMIUM",
+  },
+  EXTRAS: {
+    priceLabel: "$1.500",
+    periodLabel: "por semana",
+    paymentEnvKey: "NEXT_PUBLIC_MP_LINK_EXTRAS",
+  },
+  PRO_TOTAL: {
+    priceLabel: "$3.000",
+    periodLabel: "por semana",
+    paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PRO_TOTAL",
+  },
+};
+
+export function getPlanPrice(plan: PlanType) {
+  return PLAN_PRICES[plan].priceLabel;
+}
+
+export function getPlanPeriod(plan: PlanType) {
+  return PLAN_PRICES[plan].periodLabel;
+}
+
+export function getPlanPaymentUrl(plan: PlanType) {
+  if (plan === "FREE") return "";
+  const envKey = PLAN_PRICES[plan].paymentEnvKey;
+  if (!envKey) return "";
+
+  const envMap: Record<string, string | undefined> = {
+    NEXT_PUBLIC_MP_LINK_PREMIUM: process.env.NEXT_PUBLIC_MP_LINK_PREMIUM,
+    NEXT_PUBLIC_MP_LINK_EXTRAS: process.env.NEXT_PUBLIC_MP_LINK_EXTRAS,
+    NEXT_PUBLIC_MP_LINK_PRO_TOTAL: process.env.NEXT_PUBLIC_MP_LINK_PRO_TOTAL,
+  };
+
+  return envMap[envKey] || "";
+}
+
+
 export type SubscriptionState = {
   plan_type: PlanType;
   is_premium: boolean;
@@ -60,7 +110,7 @@ export const PLAN_BENEFITS: Record<PlanType, {
 }> = {
   FREE: {
     label: "Gratis",
-    short: "Ideal para probar la app sin pagar.",
+    short: "Para probar y usar la app con límites diarios.",
     durationLabel: "Se renueva cada día",
     swipesPerDay: 10,
     profilesPerDay: 10,
@@ -74,8 +124,8 @@ export const PLAN_BENEFITS: Record<PlanType, {
   },
   PREMIUM: {
     label: "Premium",
-    short: "Para buscar sin límites y aparecer mejor.",
-    durationLabel: "Beneficios por tiempo contratado",
+    short: "Usá la app sin límites.",
+    durationLabel: "$2.000 por semana",
     swipesPerDay: "Ilimitado",
     profilesPerDay: "Ilimitado",
     radiusKm: 50,
@@ -88,8 +138,8 @@ export const PLAN_BENEFITS: Record<PlanType, {
   },
   EXTRAS: {
     label: "Extras",
-    short: "Para acelerar resultados puntuales.",
-    durationLabel: "Extras disponibles hasta agotarse",
+    short: "Acelerá tus resultados con beneficios que se renuevan todos los días.",
+    durationLabel: "$1.500 por semana · beneficios diarios",
     swipesPerDay: 10,
     profilesPerDay: 10,
     radiusKm: 5,
@@ -98,21 +148,21 @@ export const PLAN_BENEFITS: Record<PlanType, {
     priority: false,
     boosts: 3,
     instantSearches: 5,
-    radarUses: 3,
+    radarUses: 10,
   },
   PRO_TOTAL: {
     label: "Pro Total",
-    short: "Premium + extras incluidos.",
-    durationLabel: "Máxima ventaja por tiempo contratado",
+    short: "Máximo rendimiento: Premium + Extras.",
+    durationLabel: "$3.000 por semana",
     swipesPerDay: "Ilimitado",
     profilesPerDay: "Ilimitado",
     radiusKm: "Ciudad completa",
     smartMatches: true,
     seeLikes: true,
     priority: true,
-    boosts: 10,
-    instantSearches: 999,
-    radarUses: 999,
+    boosts: 3,
+    instantSearches: 5,
+    radarUses: 10,
   },
 };
 
@@ -229,9 +279,9 @@ export async function grantUserSubscription(input: {
     plan_type: planType,
     is_premium: planType === "PREMIUM" || planType === "PRO_TOTAL",
     premium_until: planType === "PREMIUM" || planType === "PRO_TOTAL" ? until : null,
-    boosts_available: input.boosts ?? (planType === "EXTRAS" ? 3 : planType === "PRO_TOTAL" ? 10 : 0),
-    instant_searches_available: input.instantSearches ?? (planType === "EXTRAS" ? 5 : planType === "PRO_TOTAL" ? 999 : 0),
-    radar_uses_available: input.radarUses ?? (planType === "EXTRAS" ? 3 : planType === "PRO_TOTAL" ? 999 : 0),
+    boosts_available: input.boosts ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 3 : 0),
+    instant_searches_available: input.instantSearches ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 5 : 0),
+    radar_uses_available: input.radarUses ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 10 : 0),
     plan_granted_by_admin: true,
     plan_notes: input.notes || `Otorgado por admin: ${planType}`,
     plan_updated_at: now.toISOString(),
@@ -255,4 +305,48 @@ export async function clearUserSubscription(userId: string) {
   }).eq("id", userId);
 
   if (error) throw new Error(error.message);
+}
+
+
+export async function renewDailyPlanBenefits(userId: string, planType: PlanType) {
+  const config = PLAN_BENEFITS[planType];
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      boosts_available: config.boosts,
+      instant_searches_available: config.instantSearches,
+      radar_uses_available: config.radarUses,
+      free_swipes_used_today: 0,
+      free_profiles_viewed_today: 0,
+      free_usage_day: new Date().toISOString().slice(0, 10),
+      plan_updated_at: new Date().toISOString(),
+    })
+    .eq("id", userId);
+
+  if (error) throw new Error(error.message);
+}
+
+export async function ensureDailyBenefits(profile: any) {
+  const today = new Date().toISOString().slice(0, 10);
+  const usageDay = profile?.free_usage_day ? String(profile.free_usage_day).slice(0, 10) : "";
+
+  if (usageDay === today) return;
+
+  const subscription = normalizeSubscription(profile);
+  const plan = getEffectivePlan(subscription);
+  const config = PLAN_BENEFITS[plan];
+
+  await supabase
+    .from("profiles")
+    .update({
+      boosts_available: config.boosts,
+      instant_searches_available: config.instantSearches,
+      radar_uses_available: config.radarUses,
+      free_swipes_used_today: 0,
+      free_profiles_viewed_today: 0,
+      free_usage_day: today,
+      plan_updated_at: new Date().toISOString(),
+    })
+    .eq("id", profile.id);
 }

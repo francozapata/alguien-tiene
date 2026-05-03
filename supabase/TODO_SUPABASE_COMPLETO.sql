@@ -1624,3 +1624,13 @@ on conflict (ordinal) do update set code=excluded.code, section=excluded.section
 alter table public.profiles add column if not exists free_swipes_used_today integer not null default 0;
 alter table public.profiles add column if not exists free_profiles_viewed_today integer not null default 0;
 alter table public.profiles add column if not exists free_usage_day date default current_date;
+
+
+-- =========================================================
+-- PLANES COMERCIALES CONFIGURADOS EN APP
+-- Gratis: $0, límites diarios.
+-- Premium: $2.000/semana.
+-- Extras: $1.500/semana, beneficios se renuevan diariamente.
+-- Pro Total: $3.000/semana.
+-- Los links de pago se configuran en Vercel con variables NEXT_PUBLIC_MP_LINK_*
+-- =========================================================

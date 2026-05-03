@@ -4,18 +4,19 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { FiguShell } from "@/components/figus/FiguShell";
-import { getBenefitDetails, getMySubscription, getPlanExpirationText, getPlanLabel, PLAN_BENEFITS, PlanType, SubscriptionState } from "@/services/subscriptions";
+import { getBenefitDetails, getMySubscription, getPlanExpirationText, getPlanLabel, getPlanPaymentUrl, getPlanPeriod, getPlanPrice, PLAN_BENEFITS, PlanType, SubscriptionState } from "@/services/subscriptions";
 
 type PlanCardProps = {
   plan: PlanType;
   title: string;
   icon: string;
-  price: string;
   helper: string;
   dark?: boolean;
 };
 
-function PlanCard({ plan, title, icon, price, helper, dark = false }: PlanCardProps) {
+function PlanCard({ plan, title, icon, helper, dark = false }: PlanCardProps) {
+  const paymentUrl = getPlanPaymentUrl(plan);
+
   const fakeSubscription = {
     plan_type: plan,
     is_premium: plan === "PREMIUM" || plan === "PRO_TOTAL",
@@ -32,8 +33,9 @@ function PlanCard({ plan, title, icon, price, helper, dark = false }: PlanCardPr
       <p className="text-4xl">{icon}</p>
       <h2 className="mt-3 text-3xl font-black">{title}</h2>
       <p className={`mt-2 text-sm font-semibold ${dark ? "text-white/70" : "text-slate-500"}`}>{helper}</p>
-      <p className={`mt-5 text-4xl font-black ${dark ? "text-[#22C55E]" : "text-[#16A34A]"}`}>{price}</p>
-      <p className={`mt-1 text-xs font-black uppercase tracking-widest ${dark ? "text-white/50" : "text-slate-400"}`}>{PLAN_BENEFITS[plan].durationLabel}</p>
+      <p className={`mt-5 text-4xl font-black ${dark ? "text-[#22C55E]" : "text-[#16A34A]"}`}>{getPlanPrice(plan)}</p>
+      <p className={`mt-1 text-xs font-black uppercase tracking-widest ${dark ? "text-white/50" : "text-slate-400"}`}>{getPlanPeriod(plan)}</p>
+      <p className={`mt-2 text-xs font-bold ${dark ? "text-white/50" : "text-slate-400"}`}>{PLAN_BENEFITS[plan].durationLabel}</p>
 
       <div className="mt-5 space-y-3">
         {getBenefitDetails(fakeSubscription).map((benefit) => (
@@ -47,13 +49,28 @@ function PlanCard({ plan, title, icon, price, helper, dark = false }: PlanCardPr
         ))}
       </div>
 
-      <button
-        type="button"
-        className={`mt-6 w-full rounded-2xl px-5 py-4 text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}
-        onClick={() => alert("Pago pendiente de conectar con Mercado Pago o canje de códigos.")}
-      >
-        {plan === "FREE" ? "Plan actual gratis" : "Elegir plan"}
-      </button>
+      {plan === "FREE" ? (
+        <button type="button" className={`mt-6 w-full rounded-2xl px-5 py-4 text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}>
+          Plan actual gratis
+        </button>
+      ) : paymentUrl ? (
+        <a
+          href={paymentUrl}
+          target="_blank"
+          rel="noreferrer"
+          className={`mt-6 block w-full rounded-2xl px-5 py-4 text-center text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}
+        >
+          Pagar {getPlanPrice(plan)}
+        </a>
+      ) : (
+        <button
+          type="button"
+          className={`mt-6 w-full rounded-2xl px-5 py-4 text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}
+          onClick={() => alert("Falta configurar el link de pago de este plan en las variables de entorno.")}
+        >
+          Configurar link de pago
+        </button>
+      )}
     </article>
   );
 }
@@ -106,7 +123,6 @@ export default function SuscripcionPage() {
           plan="FREE"
           icon="🆓"
           title="Gratis"
-          price="$0"
           helper="Para probar y usar la app con límites diarios."
         />
 
@@ -114,7 +130,6 @@ export default function SuscripcionPage() {
           plan="PREMIUM"
           icon="💎"
           title="Premium"
-          price="$"
           helper="Para quienes quieren buscar sin límites."
         />
 
@@ -122,7 +137,6 @@ export default function SuscripcionPage() {
           plan="EXTRAS"
           icon="⚡"
           title="Extras"
-          price="$"
           helper="Compras rápidas para acelerar resultados."
         />
 
@@ -130,7 +144,6 @@ export default function SuscripcionPage() {
           plan="PRO_TOTAL"
           icon="🏆"
           title="Pro Total"
-          price="$"
           helper="Premium + extras incluidos."
           dark
         />
