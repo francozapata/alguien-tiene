@@ -326,55 +326,51 @@ function selectFairExchange(currentUserGets: number[], otherUserGets: number[]) 
 }
 
 export async function generateMatchesForUser(userId: string, albumId: string) {
-  const { data: myRequest, error: requestError } = await supabase.from("figu_requests").select("*").eq("user_id", userId).eq("album_id", albumId).eq("is_active", true).order("created_at", { ascending: false }).limit(1).maybeSingle();
-  if (requestError) throw new Error(requestError.message);
-  if (!myRequest) return [];
+  // El match ya no depende de que ambos usuarios tengan una solicitud activa.
+  // La fuente de verdad es:
+  // - user_album_progress.owned_figus = todas las figuritas que el usuario tiene.
+  // - user_repeated_figus = excedentes que puede entregar.
+  // Regla 1x1: ambos tienen que recibir y entregar la misma cantidad.
 
-  await supabase.from("figu_matches").update({ is_active: false, updated_at: new Date().toISOString() }).eq("album_id", albumId).or(`user1_id.eq.${userId},user2_id.eq.${userId}`).not("status", "in", "(INTERCAMBIADO,CANCELADO)");
-
-  const { data: myRepeatedRows, error: myRepeatedError } = await supabase.from("user_repeated_figus").select("figu_number, quantity").eq("user_id", userId).eq("album_id", albumId);
-  if (myRepeatedError) throw new Error(myRepeatedError.message);
-
-  // No usamos ciudad/barrio escritos a mano para matchear: solo ubicación real guardada por permiso.
-  const { data: otherRequests, error: otherError } = await supabase
+  const { data: myRequest, error: requestError } = await supabase
     .from("figu_requests")
     .select("*")
+    .eq("user_id", userId)
     .eq("album_id", albumId)
     .eq("is_active", true)
-    .neq("user_id", userId)
-    .limit(800);
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  if (otherError) throw new Error(otherError.message);
-  const otherUserIds = (otherRequests ?? []).map((request: any) => request.user_id);
-  if (otherUserIds.length === 0) return [];
+  if (requestError) throw new Error(requestError.message);
 
-  const { data: profiles, error: profilesError } = await supabase
-    .from("profiles")
-    .select("id, lat, lng, city, neighborhood, plan_type, is_premium, premium_until, boosts_available, instant_searches_available, radar_uses_available, plan_granted_by_admin, plan_notes")
-    .in("id", [...otherUserIds, userId]);
-
-  if (profilesError) throw new Error(profilesError.message);
-
-  const profileById = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
-  const myProfile = profileById.get(userId) ?? null;
-
-  const { data: allRepeated, error: repeatedError } = await supabase
-    .from("user_repeated_figus")
-    .select("user_id, figu_number, quantity")
+  await supabase
+    .from("figu_matches")
+    .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("album_id", albumId)
-    .in("user_id", [...otherUserIds, userId]);
-  if (repeatedError) throw new Error(repeatedError.message);
+    .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
+    .not("status", "in", "(INTERCAMBIADO,CANCELADO)");
 
   const { data: progressRows, error: progressError } = await supabase
     .from("user_album_progress")
     .select("user_id, owned_figus")
-    .eq("album_id", albumId)
-    .in("user_id", [...otherUserIds, userId]);
+    .eq("album_id", albumId);
+
   if (progressError) throw new Error(progressError.message);
 
   const progressByUser = new Map<string, number[]>(
     (progressRows ?? []).map((row: any) => [row.user_id, serializeFigus((row.owned_figus ?? []) as number[])])
   );
+
+  const myOwned = progressByUser.get(userId) ?? [];
+  if (myOwned.length === 0) return [];
+
+  const { data: allRepeated, error: repeatedError } = await supabase
+    .from("user_repeated_figus")
+    .select("user_id, figu_number, quantity")
+    .eq("album_id", albumId);
+
+  if (repeatedError) throw new Error(repeatedError.message);
 
   const repeatedByUser = new Map<string, Set<number>>();
   for (const row of allRepeated ?? []) {
@@ -384,43 +380,67 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
     repeatedByUser.set(row.user_id, set);
   }
 
-  // Regla correcta: las faltantes salen del álbum real.
-  // cantidad 0 => falta; cantidad 1 => la tiene; cantidad >= 2 => repetida.
-  // user_album_progress guarda todas las que tiene; user_repeated_figus guarda las excedentes.
-  const myOwned = progressByUser.get(userId) ?? [];
-  const myNeeded = new Set<number>(calculateNeededFromOwned(myOwned));
   const myRepeated = repeatedByUser.get(userId) ?? new Set<number>();
+  if (myRepeated.size === 0) return [];
+
+  const candidateUserIds = Array.from(progressByUser.keys()).filter((id) => id !== userId);
+  if (candidateUserIds.length === 0) return [];
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, lat, lng, city, neighborhood, plan_type, is_premium, premium_until, boosts_available, instant_searches_available, radar_uses_available, plan_granted_by_admin, plan_notes")
+    .in("id", [...candidateUserIds, userId]);
+
+  if (profilesError) throw new Error(profilesError.message);
+
+  const profileById = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
+  const myProfile = profileById.get(userId) ?? null;
+
+  const { data: requestRows, error: otherRequestsError } = await supabase
+    .from("figu_requests")
+    .select("user_id, is_urgent, city, neighborhood")
+    .eq("album_id", albumId)
+    .eq("is_active", true)
+    .in("user_id", candidateUserIds);
+
+  if (otherRequestsError) throw new Error(otherRequestsError.message);
+
+  const requestByUser = new Map<string, any>((requestRows ?? []).map((row: any) => [row.user_id, row]));
+  const myNeeded = new Set<number>(calculateNeededFromOwned(myOwned));
   const created = [];
 
-  for (const otherRequest of otherRequests ?? []) {
-    const otherProfile = profileById.get(otherRequest.user_id) ?? null;
+  for (const otherUserId of candidateUserIds) {
+    const otherProfile = profileById.get(otherUserId) ?? null;
     const distanceKm = calculateDistanceKm(myProfile, otherProfile);
 
-    // Sin ubicación real de ambos no generamos match: evitamos errores por texto cargado manualmente.
+    // Usamos ubicación real. Si falta en alguno, no mostramos match para no crear cruces falsos.
     if (distanceKm === null) continue;
 
-    const otherOwned = progressByUser.get(otherRequest.user_id) ?? [];
+    const otherOwned = progressByUser.get(otherUserId) ?? [];
+    const otherRepeatedSet = repeatedByUser.get(otherUserId) ?? new Set<number>();
+    if (otherOwned.length === 0 || otherRepeatedSet.size === 0) continue;
+
     const otherNeeded = new Set<number>(calculateNeededFromOwned(otherOwned));
-    const otherRepeatedSet = repeatedByUser.get(otherRequest.user_id) ?? new Set<number>();
 
     const rawCurrentUserGets: number[] = Array.from(myNeeded).filter((figu) => otherRepeatedSet.has(figu));
     const rawOtherUserGets: number[] = Array.from(otherNeeded).filter((figu) => myRepeated.has(figu));
 
-    // Regla final: solo hay match si existe intercambio mutuo mano a mano.
+    // Regla final: si no hay intercambio mutuo, no hay match.
     if (rawCurrentUserGets.length === 0 || rawOtherUserGets.length === 0) continue;
 
     const fair = selectFairExchange(rawCurrentUserGets, rawOtherUserGets);
     if (fair.count <= 0) continue;
 
-    const user1 = userId < otherRequest.user_id ? userId : otherRequest.user_id;
-    const user2 = userId < otherRequest.user_id ? otherRequest.user_id : userId;
+    const user1 = userId < otherUserId ? userId : otherUserId;
+    const user2 = userId < otherUserId ? otherUserId : userId;
     const currentUserIsUser1 = user1 === userId;
     const otherSubscription = normalizeSubscription(otherProfile);
     const otherPriority = getPlanLimits(otherSubscription).priorityWeight;
-    const score = calculateScore({ exchangeCount: fair.count, distanceKm, otherUrgent: otherRequest.is_urgent, otherPriority });
+    const otherRequest = requestByUser.get(otherUserId) ?? null;
+    const score = calculateScore({ exchangeCount: fair.count, distanceKm, otherUrgent: Boolean(otherRequest?.is_urgent), otherPriority });
 
-    const city = myProfile?.city ?? otherProfile?.city ?? myRequest.city ?? otherRequest.city ?? null;
-    const neighborhood = myProfile?.neighborhood ?? otherProfile?.neighborhood ?? myRequest.neighborhood ?? otherRequest.neighborhood ?? null;
+    const city = myProfile?.city ?? otherProfile?.city ?? myRequest?.city ?? otherRequest?.city ?? null;
+    const neighborhood = myProfile?.neighborhood ?? otherProfile?.neighborhood ?? myRequest?.neighborhood ?? otherRequest?.neighborhood ?? null;
 
     const payload = {
       user1_id: user1,
@@ -436,12 +456,22 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
       meeting_suggestion: suggestMeetingPlace(city, neighborhood),
       status: "PENDIENTE",
       is_active: true,
+      rejected_by_user1: false,
+      rejected_by_user2: false,
+      hidden_by_user1: false,
+      hidden_by_user2: false,
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabase.from("figu_matches").upsert(payload, { onConflict: "user1_id,user2_id,album_id" }).select("*").single();
+    const { data, error } = await supabase
+      .from("figu_matches")
+      .upsert(payload, { onConflict: "user1_id,user2_id,album_id" })
+      .select("*")
+      .single();
+
     if (!error && data) created.push(data);
   }
+
   return created;
 }
 
