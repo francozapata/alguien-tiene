@@ -1,0 +1,13 @@
+SQL corregido.
+
+Usar este archivo en Supabase:
+supabase/TODO_SUPABASE_COMPLETO.sql
+
+Cambio clave:
+- Normaliza reports.status antes de recrear reports_status_check.
+- Acepta valores viejos en minúscula/inglés y los pasa a PENDIENTE, RESUELTO o DESCARTADO.
+
+Pasos:
+1) Copiar todo supabase/TODO_SUPABASE_COMPLETO.sql
+2) Pegarlo en Supabase SQL Editor
+3) Run

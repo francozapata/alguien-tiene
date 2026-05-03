@@ -1,0 +1,150 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { FiguShell } from "@/components/figus/FiguShell";
+import { getDaysLeft, getMySubscription, getPlanLabel, SubscriptionState } from "@/services/subscriptions";
+
+type PlanCardProps = {
+  title: string;
+  icon: string;
+  price: string;
+  helper: string;
+  features: string[];
+  dark?: boolean;
+};
+
+function PlanCard({ title, icon, price, helper, features, dark = false }: PlanCardProps) {
+  return (
+    <article className={`rounded-[2.5rem] p-6 shadow-sm ring-1 ${dark ? "bg-[#0D1B2A] text-white ring-[#0D1B2A]" : "bg-white text-[#0D1B2A] ring-slate-200"}`}>
+      <p className="text-4xl">{icon}</p>
+      <h2 className="mt-3 text-3xl font-black">{title}</h2>
+      <p className={`mt-2 text-sm font-semibold ${dark ? "text-white/70" : "text-slate-500"}`}>{helper}</p>
+      <p className={`mt-5 text-4xl font-black ${dark ? "text-[#22C55E]" : "text-[#16A34A]"}`}>{price}</p>
+      <p className={`mt-1 text-xs font-black uppercase tracking-widest ${dark ? "text-white/50" : "text-slate-400"}`}>por 7 días</p>
+      <ul className={`mt-5 space-y-2 text-sm font-bold ${dark ? "text-white/85" : "text-slate-600"}`}>
+        {features.map((feature) => <li key={feature}>✔ {feature}</li>)}
+      </ul>
+      <button
+        type="button"
+        className={`mt-6 w-full rounded-2xl px-5 py-4 text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}
+        onClick={() => alert("Pago pendiente de conectar con Mercado Pago. Este botón ya queda listo para integrar checkout.")}
+      >
+        Elegir plan
+      </button>
+    </article>
+  );
+}
+
+export default function SuscripcionPage() {
+  const { user, loading } = useAuth();
+  const [subscription, setSubscription] = useState<SubscriptionState | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      if (!user) return;
+      const data = await getMySubscription(user);
+      setSubscription(data.subscription);
+    }
+    load();
+  }, [user]);
+
+  const daysLeft = getDaysLeft(subscription?.premium_until);
+
+  if (loading) return <FiguShell><div className="rounded-[2rem] bg-white p-8">Cargando...</div></FiguShell>;
+
+  return (
+    <FiguShell>
+      <div className="mb-5 flex items-center justify-between">
+        <Link href="/figus" className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200">← Home Figus</Link>
+      </div>
+
+      <section className="rounded-[2.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
+        <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2563EB]">Suscribite</p>
+        <h1 className="mt-2 text-5xl font-black text-[#0D1B2A]">Conseguí figus más rápido</h1>
+        <p className="mt-3 max-w-3xl text-sm font-semibold leading-6 text-slate-500">
+          La app sigue funcionando gratis. La suscripción te da más alcance, más velocidad y prioridad para encontrar intercambios.
+        </p>
+
+        {user && subscription ? (
+          <div className="mt-6 rounded-[2rem] bg-emerald-50 p-5 ring-1 ring-emerald-100">
+            <h2 className="text-xl font-black text-emerald-900">Tu estado actual: {getPlanLabel(subscription.plan_type)}</h2>
+            <p className="mt-1 text-sm font-bold text-emerald-700">
+              {subscription.is_premium ? `Te quedan ${daysLeft} día${daysLeft === 1 ? "" : "s"} de premium.` : "Estás usando el modo gratis."}
+            </p>
+            <p className="mt-2 text-sm font-semibold text-slate-600">
+              Boosts: {subscription.boosts_available} · Búsquedas instantáneas: {subscription.instant_searches_available} · Radar: {subscription.radar_uses_available}
+            </p>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="mt-6 grid gap-5 lg:grid-cols-3">
+        <PlanCard
+          icon="💎"
+          title="Premium"
+          price="$"
+          helper="Para quienes quieren buscar sin límites."
+          features={[
+            "Swipes ilimitados 👉 Podés deslizar sin límite",
+            "Perfiles ilimitados 👉 Nunca te quedás sin usuarios",
+            "Prioridad en matches cercanos 👉 Aparecés primero",
+            "Radio ampliado 👉 Buscás más lejos",
+            "Matches inteligentes 👉 Menos tiempo perdido",
+            "Ver quién te dio like 👉 Sabés quién te quiere",
+          ]}
+        />
+
+        <PlanCard
+          icon="⚡"
+          title="Extras"
+          price="$"
+          helper="Compras rápidas para acelerar resultados."
+          features={[
+            "Boost de perfil 👉 Más visibilidad inmediata",
+            "Búsqueda instantánea 👉 Encontrás ahora",
+            "Radar cercano 👉 Detecta gente cerca",
+            "Ideal para usar cuando necesitás figus ya",
+          ]}
+        />
+
+        <PlanCard
+          icon="🏆"
+          title="Pro Total"
+          price="$"
+          helper="Premium + extras incluidos."
+          dark
+          features={[
+            "Todo Premium 👉 Sin límites",
+            "Boosts incluidos 👉 Sin pagar extra",
+            "Radar ilimitado 👉 Siempre activo",
+            "Búsquedas instantáneas",
+            "Máxima prioridad en cercanía",
+          ]}
+        />
+      </section>
+
+      <section className="mt-6 rounded-[2.5rem] bg-[#0D1B2A] p-6 text-white shadow-xl">
+        <h2 className="text-3xl font-black">Cuándo conviene suscribirse</h2>
+        <div className="mt-5 grid gap-3 md:grid-cols-3">
+          <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/10">
+            <p className="text-2xl">🔥</p>
+            <h3 className="mt-2 font-black">Te quedaste sin swipes</h3>
+            <p className="mt-1 text-sm text-white/70">Premium libera el uso completo.</p>
+          </div>
+          <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/10">
+            <p className="text-2xl">📍</p>
+            <h3 className="mt-2 font-black">Querés ampliar radio</h3>
+            <p className="mt-1 text-sm text-white/70">Encontrá usuarios fuera de tu zona inmediata.</p>
+          </div>
+          <div className="rounded-3xl bg-white/10 p-4 ring-1 ring-white/10">
+            <p className="text-2xl">👀</p>
+            <h3 className="mt-2 font-black">Querés ver likes</h3>
+            <p className="mt-1 text-sm text-white/70">Sabé quién quiere intercambiar con vos.</p>
+          </div>
+        </div>
+      </section>
+    </FiguShell>
+  );
+}

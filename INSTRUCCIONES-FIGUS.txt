@@ -1,0 +1,16 @@
+INSTRUCCIONES RAPIDAS - FIGUS MUNDIAL 2026
+
+1) npm install
+2) Revisar .env.local con Firebase y Supabase
+3) En Supabase SQL Editor ejecutar UN SOLO archivo:
+   supabase/TODO_SUPABASE_COMPLETO.sql
+4) npm run dev
+5) Abrir http://localhost:3000/figus
+
+Flujo:
+- Mi album: marcar las 980 figus o carga rapida.
+- Repetidas: cargar numero y cantidad.
+- Solicitud: cargar las que necesitas + ciudad/barrio.
+- Matches: recalcular y abrir chat.
+
+Archivo SQL unico: supabase/TODO_SUPABASE_COMPLETO.sql
