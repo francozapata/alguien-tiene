@@ -203,6 +203,10 @@ export async function saveOwnedFigus(firebaseUser: User, ownedFigus: number[]) {
     { onConflict: "user_id,album_id" }
   );
   if (error) throw new Error(error.message);
+
+  // Al guardar el álbum recalculamos matches para que el modo simple y Tinder
+  // usen siempre el estado real del álbum, no una solicitud vieja.
+  await refreshMyFiguMatches(firebaseUser);
 }
 
 export async function saveRepeatedFigus(firebaseUser: User, repeated: Record<number, number>) {
@@ -354,11 +358,38 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
   const profileById = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
   const myProfile = profileById.get(userId) ?? null;
 
-  const { data: allRepeated, error: repeatedError } = await supabase.from("user_repeated_figus").select("user_id, figu_number, quantity").eq("album_id", albumId).in("user_id", [...otherUserIds, userId]);
+  const { data: allRepeated, error: repeatedError } = await supabase
+    .from("user_repeated_figus")
+    .select("user_id, figu_number, quantity")
+    .eq("album_id", albumId)
+    .in("user_id", [...otherUserIds, userId]);
   if (repeatedError) throw new Error(repeatedError.message);
 
-  const myRepeated = new Set<number>((myRepeatedRows ?? []).filter((row: any) => row.quantity > 0).map((row: any) => Number(row.figu_number)));
-  const myNeeded = new Set<number>(((myRequest.needed_figus ?? []) as number[]).map(Number));
+  const { data: progressRows, error: progressError } = await supabase
+    .from("user_album_progress")
+    .select("user_id, owned_figus")
+    .eq("album_id", albumId)
+    .in("user_id", [...otherUserIds, userId]);
+  if (progressError) throw new Error(progressError.message);
+
+  const progressByUser = new Map<string, number[]>(
+    (progressRows ?? []).map((row: any) => [row.user_id, serializeFigus((row.owned_figus ?? []) as number[])])
+  );
+
+  const repeatedByUser = new Map<string, Set<number>>();
+  for (const row of allRepeated ?? []) {
+    if (Number(row.quantity ?? 0) <= 0) continue;
+    const set = repeatedByUser.get(row.user_id) ?? new Set<number>();
+    set.add(Number(row.figu_number));
+    repeatedByUser.set(row.user_id, set);
+  }
+
+  // Regla correcta: las faltantes salen del álbum real.
+  // cantidad 0 => falta; cantidad 1 => la tiene; cantidad >= 2 => repetida.
+  // user_album_progress guarda todas las que tiene; user_repeated_figus guarda las excedentes.
+  const myOwned = progressByUser.get(userId) ?? [];
+  const myNeeded = new Set<number>(calculateNeededFromOwned(myOwned));
+  const myRepeated = repeatedByUser.get(userId) ?? new Set<number>();
   const created = [];
 
   for (const otherRequest of otherRequests ?? []) {
@@ -368,13 +399,12 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
     // Sin ubicación real de ambos no generamos match: evitamos errores por texto cargado manualmente.
     if (distanceKm === null) continue;
 
-    const otherRepeated = (allRepeated ?? [])
-      .filter((row: any) => row.user_id === otherRequest.user_id && row.quantity > 0)
-      .map((row: any) => Number(row.figu_number));
-    const otherRepeatedSet = new Set<number>(otherRepeated);
+    const otherOwned = progressByUser.get(otherRequest.user_id) ?? [];
+    const otherNeeded = new Set<number>(calculateNeededFromOwned(otherOwned));
+    const otherRepeatedSet = repeatedByUser.get(otherRequest.user_id) ?? new Set<number>();
 
     const rawCurrentUserGets: number[] = Array.from(myNeeded).filter((figu) => otherRepeatedSet.has(figu));
-    const rawOtherUserGets: number[] = ((otherRequest.needed_figus ?? []) as number[]).map(Number).filter((figu) => myRepeated.has(figu));
+    const rawOtherUserGets: number[] = Array.from(otherNeeded).filter((figu) => myRepeated.has(figu));
 
     // Regla final: solo hay match si existe intercambio mutuo mano a mano.
     if (rawCurrentUserGets.length === 0 || rawOtherUserGets.length === 0) continue;

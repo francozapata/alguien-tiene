@@ -42,9 +42,9 @@ export function getPlanPaymentUrl(plan: PlanType) {
   if (!envKey) return "";
 
   const envMap: Record<string, string | undefined> = {
-    NEXT_PUBLIC_MP_LINK_BASICO: process.env.NEXT_PUBLIC_MP_LINK_BASICO,
-    NEXT_PUBLIC_MP_LINK_PLUS: process.env.NEXT_PUBLIC_MP_LINK_PLUS,
-    NEXT_PUBLIC_MP_LINK_PREMIUM: process.env.NEXT_PUBLIC_MP_LINK_PREMIUM,
+    NEXT_PUBLIC_MP_LINK_BASICO: process.env.NEXT_PUBLIC_MP_LINK_BASICO || process.env.NEXT_PUBLIC_MP_PLAN_BASIC_URL,
+    NEXT_PUBLIC_MP_LINK_PLUS: process.env.NEXT_PUBLIC_MP_LINK_PLUS || process.env.NEXT_PUBLIC_MP_PLAN_PLUS_URL,
+    NEXT_PUBLIC_MP_LINK_PREMIUM: process.env.NEXT_PUBLIC_MP_LINK_PREMIUM || process.env.NEXT_PUBLIC_MP_PLAN_PREMIUM_URL,
   };
 
   return envMap[envKey] || "";
