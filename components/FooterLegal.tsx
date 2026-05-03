@@ -6,7 +6,7 @@ export default function FooterLegal() {
     <footer className="bg-[#0D1B2A] px-4 py-8 text-white">
       <div className="mx-auto grid max-w-6xl gap-6 md:grid-cols-[1fr_1.5fr_1fr] md:items-center">
         <div>
-          <Image src="/brand/logo-full-dark.png" alt="Alguien Tiene" width={210} height={80} className="h-14 w-auto object-contain" />
+          <Image src="/brand/alguien-tiene-logo.jpeg" alt="Alguien Tiene" width={210} height={80} className="h-14 w-auto object-contain" />
           <p className="mt-2 text-xs font-semibold text-slate-300">Lo que buscás, alguien lo tiene.</p>
         </div>
 

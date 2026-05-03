@@ -64,9 +64,10 @@ export default function DescubrirIntercambiosPage() {
 
         const amUser1 = m.user1_id === data.profile.id;
 
-        // Si el usuario rechazó una propuesta, no debe volver al modo rápido.
-        if (amUser1 && m.rejected_by_user1) return false;
-        if (!amUser1 && m.rejected_by_user2) return false;
+        // Si el usuario rechazó o ya marcó interés, no debe volver al modo rápido.
+        // El chat se abre recién cuando ambos marcan interés.
+        if (amUser1 && (m.rejected_by_user1 || m.liked_by_user1)) return false;
+        if (!amUser1 && (m.rejected_by_user2 || m.liked_by_user2)) return false;
 
         const distance = m.distance_km ?? Number.POSITIVE_INFINITY;
         return distance <= maxRadius;

@@ -290,7 +290,7 @@ export default function AdminPage() {
 
 
   async function grantPlanToUser(targetUser: AdminUser, planType: PlanType) {
-    const daysRaw = prompt(`¿Cuántos días querés dar de ${planType}?`, "7");
+    const daysRaw = prompt(`¿Cuántos días querés dar de ${planType}?`, planType === "PREMIUM" ? "14" : "7");
     const days = Number(daysRaw || 7);
     if (!Number.isFinite(days) || days <= 0) return;
 

@@ -9,6 +9,21 @@ import { FiguMatch } from "@/types/figus";
 import { formatStickerList } from "@/lib/figus/catalog";
 import { notifyLocalMatch } from "@/utils/notifications";
 
+
+const SEEN_KEY = "figu_seen_incoming_message_ids";
+
+function markIncomingMessagesSeen(messages: Array<{ id: string; sender_id: string }>, profileId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const seen = new Set<string>(JSON.parse(window.localStorage.getItem(SEEN_KEY) || "[]"));
+    messages.forEach((message) => {
+      if (message.sender_id !== profileId) seen.add(message.id);
+    });
+    window.localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(seen).slice(-250)));
+    window.dispatchEvent(new Event("figu-notifications-seen"));
+  } catch {}
+}
+
 function exchangeText(match: FiguMatch, profileId: string) {
   const amUser1 = match.user1_id === profileId;
   const iGet = amUser1 ? match.figus_user1_gets : match.figus_user2_gets;
@@ -31,6 +46,7 @@ export default function FiguChatsPage() {
       const data = await getMyFiguChats(user);
       setProfileId(data.profile.id);
       setChats(data.chats as FiguMatch[]);
+      markIncomingMessagesSeen((data.chats as FiguMatch[]).map((chat) => chat.last_message).filter(Boolean) as any[], data.profile.id);
       setStatus(data.chats.length ? "Chats cargados." : "Todavía no tenés chats abiertos.");
 
       const nextIds = new Set<string>();

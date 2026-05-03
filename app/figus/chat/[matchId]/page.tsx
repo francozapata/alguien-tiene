@@ -11,6 +11,21 @@ import { notifyLocalMatch } from "@/utils/notifications";
 import { supabase } from "@/lib/supabase";
 import { formatStickerList } from "@/lib/figus/catalog";
 
+
+const SEEN_KEY = "figu_seen_incoming_message_ids";
+
+function markIncomingMessagesSeen(messages: Array<{ id: string; sender_id: string }>, profileId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const seen = new Set<string>(JSON.parse(window.localStorage.getItem(SEEN_KEY) || "[]"));
+    messages.forEach((message) => {
+      if (message.sender_id !== profileId) seen.add(message.id);
+    });
+    window.localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(seen).slice(-250)));
+    window.dispatchEvent(new Event("figu-notifications-seen"));
+  } catch {}
+}
+
 function distanceLabel(distance?: number | null) {
   if (distance === null || distance === undefined) return "Ubicación por confirmar";
   if (distance < 1) return `A ${Math.round(distance * 1000)} m`;
@@ -40,6 +55,7 @@ export default function FiguChatPage() {
       setProfileId(data.profile.id);
       setMatch(data.match as FiguMatch);
       setMessages(nextMessages);
+      markIncomingMessagesSeen(nextMessages, data.profile.id);
       if (!options?.silent) setStatus("Chat cargado.");
 
       const nextIds = new Set<string>();

@@ -53,7 +53,7 @@ function PlanCard({ plan, title, icon, helper, userId, dark = false }: PlanCardP
   const fakeSubscription = {
     plan_type: plan,
     is_premium: plan !== "FREE",
-    premium_until: plan === "FREE" ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    premium_until: plan === "FREE" ? null : new Date(Date.now() + (plan === "PREMIUM" ? 14 : 7) * 24 * 60 * 60 * 1000).toISOString(),
     boosts_available: PLAN_BENEFITS[plan].boosts,
     instant_searches_available: PLAN_BENEFITS[plan].instantSearches,
     radar_uses_available: PLAN_BENEFITS[plan].radarUses,

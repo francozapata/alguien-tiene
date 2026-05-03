@@ -867,6 +867,8 @@ export async function getFiguNotificationSummary(firebaseUser: User) {
     chats_count: visible.length,
     incoming_count: incoming.length,
     latest_incoming: incoming[0] ?? null,
+    incoming_messages: incoming,
+    incoming_message_ids: incoming.map((message: any) => message.id),
   };
 }
 
@@ -881,6 +883,9 @@ export async function getMatchWithMessages(firebaseUser: User, matchId: string) 
     .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
     .single();
   if (matchError) throw new Error(matchError.message);
+
+  const chatEnabled = Boolean((match as any).mutual_interest) || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String((match as any).status || ""));
+  if (!chatEnabled) throw new Error("El chat se habilita recién cuando ambos marcan interés.");
 
   const { data: messages, error: messagesError } = await supabase.from("figu_chat_messages").select("*, profiles(display_name, avatar_url)").eq("match_id", matchId).order("created_at", { ascending: true });
   if (messagesError) throw new Error(messagesError.message);

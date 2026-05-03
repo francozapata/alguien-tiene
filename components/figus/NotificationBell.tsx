@@ -5,11 +5,29 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getFiguNotificationSummary } from "@/services/figus";
 import { notifyLocalMatch } from "@/utils/notifications";
 
+const SEEN_KEY = "figu_seen_incoming_message_ids";
+
+function getSeenIds() {
+  if (typeof window === "undefined") return new Set<string>();
+  try {
+    return new Set<string>(JSON.parse(window.localStorage.getItem(SEEN_KEY) || "[]"));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function saveSeenIds(ids: Set<string>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(ids).slice(-250)));
+  window.dispatchEvent(new Event("figu-notifications-seen"));
+}
+
 export default function NotificationBell() {
   const { user } = useAuth();
   const [count, setCount] = useState(0);
   const [incoming, setIncoming] = useState(0);
   const [latest, setLatest] = useState<any>(null);
+  const [incomingIds, setIncomingIds] = useState<string[]>([]);
   const [open, setOpen] = useState(false);
   const lastIncomingId = useRef<string | null>(null);
   const initialized = useRef(false);
@@ -18,25 +36,46 @@ export default function NotificationBell() {
     if (!user) return;
     try {
       const data = await getFiguNotificationSummary(user);
-      setCount(data.chats_count ?? 0);
-      setIncoming(data.incoming_count ?? 0);
-      setLatest(data.latest_incoming ?? null);
+      const seen = getSeenIds();
+      const allIncoming = data.incoming_messages ?? [];
+      const unseenIncoming = allIncoming.filter((message: any) => !seen.has(message.id));
 
-      if (initialized.current && data.latest_incoming?.id && data.latest_incoming.id !== lastIncomingId.current) {
-        notifyLocalMatch("Nuevo mensaje en Alguien Tiene", data.latest_incoming.message || "Tenés un mensaje nuevo.");
+      setCount(data.chats_count ?? 0);
+      setIncoming(unseenIncoming.length);
+      setLatest(unseenIncoming[0] ?? null);
+      setIncomingIds((data.incoming_message_ids ?? []).filter((id: string) => !seen.has(id)));
+
+      if (initialized.current && unseenIncoming[0]?.id && unseenIncoming[0].id !== lastIncomingId.current) {
+        notifyLocalMatch("Nuevo mensaje en Alguien Tiene", unseenIncoming[0].message || "Tenés un mensaje nuevo.");
       }
 
-      if (data.latest_incoming?.id) lastIncomingId.current = data.latest_incoming.id;
+      if (unseenIncoming[0]?.id) lastIncomingId.current = unseenIncoming[0].id;
       initialized.current = true;
     } catch {
       // No bloquea navbar.
     }
   }
 
+  function markVisibleAsSeen() {
+    if (!incomingIds.length) return;
+    const seen = getSeenIds();
+    incomingIds.forEach((id) => seen.add(id));
+    saveSeenIds(seen);
+    setIncoming(0);
+    setLatest(null);
+    setIncomingIds([]);
+  }
+
   useEffect(() => {
     load();
     const id = window.setInterval(load, 7000);
-    return () => window.clearInterval(id);
+    window.addEventListener("figu-notifications-seen", load);
+    window.addEventListener("focus", load);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("figu-notifications-seen", load);
+      window.removeEventListener("focus", load);
+    };
   }, [user]);
 
   if (!user) return null;
@@ -45,7 +84,11 @@ export default function NotificationBell() {
     <div className="relative">
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          const nextOpen = !open;
+          setOpen(nextOpen);
+          if (nextOpen) markVisibleAsSeen();
+        }}
         title="Notificaciones"
         className="relative inline-flex items-center justify-center rounded-full border border-white/20 bg-white/10 px-3 py-2 text-sm font-black text-white hover:bg-white/15"
       >

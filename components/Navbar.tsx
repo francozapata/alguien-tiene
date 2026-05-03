@@ -24,19 +24,11 @@ export default function Navbar() {
       <nav className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
         <Link href="/figus" className="flex min-w-0 items-center gap-2">
           <Image
-            src="/brand/logo-mark-dark.png"
+            src="/brand/alguien-tiene-logo.jpeg"
             alt="Alguien Tiene"
-            width={64}
-            height={64}
-            className="h-14 w-14 shrink-0 rounded-xl object-contain sm:h-16 sm:w-16"
-            priority
-          />
-          <Image
-            src="/brand/logo-text-dark.png"
-            alt="Alguien Tiene"
-            width={220}
-            height={86}
-            className="hidden h-14 w-auto object-contain sm:block"
+            width={260}
+            height={120}
+            className="h-14 w-auto shrink-0 rounded-xl object-contain sm:h-16"
             priority
           />
         </Link>

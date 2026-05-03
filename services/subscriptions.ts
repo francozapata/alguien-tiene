@@ -15,7 +15,7 @@ export const PLAN_PRICES: Record<PlanType, {
   FREE: { priceLabel: "$0", periodLabel: "gratis" },
   BASICO: { priceLabel: "$900", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_BASICO" },
   PLUS: { priceLabel: "$1.900", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PLUS" },
-  PREMIUM: { priceLabel: "$2.500", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PREMIUM" },
+  PREMIUM: { priceLabel: "$2.500", periodLabel: "por 2 semanas", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PREMIUM" },
 };
 
 export function normalizePlanType(plan?: string | null): PlanType {
@@ -127,7 +127,7 @@ export const PLAN_BENEFITS: Record<PlanType, {
     manualProfilesPerSearch: 3,
     manualContactsPerDay: 1,
     tinderCardsPerDay: 10,
-    tinderLikesPerDay: 3,
+    tinderLikesPerDay: 10,
     undoPerDay: 0,
     radiusKm: 3,
     advancedFilters: false,
@@ -144,8 +144,8 @@ export const PLAN_BENEFITS: Record<PlanType, {
     manualSearchesPerDay: 20,
     manualProfilesPerSearch: 10,
     manualContactsPerDay: 5,
-    tinderCardsPerDay: 40,
-    tinderLikesPerDay: 15,
+    tinderCardsPerDay: 30,
+    tinderLikesPerDay: 30,
     undoPerDay: 1,
     radiusKm: 8,
     advancedFilters: true,
@@ -162,7 +162,7 @@ export const PLAN_BENEFITS: Record<PlanType, {
     manualSearchesPerDay: "Ilimitado",
     manualProfilesPerSearch: 30,
     manualContactsPerDay: 20,
-    tinderCardsPerDay: 150,
+    tinderCardsPerDay: 60,
     tinderLikesPerDay: 60,
     undoPerDay: 5,
     radiusKm: 20,
@@ -176,7 +176,7 @@ export const PLAN_BENEFITS: Record<PlanType, {
   PREMIUM: {
     label: "Premium",
     short: "Para usuarios intensivos: todo ilimitado, máximo alcance y prioridad.",
-    durationLabel: "Plan semanal",
+    durationLabel: "Plan por 2 semanas",
     manualSearchesPerDay: "Ilimitado",
     manualProfilesPerSearch: "Ilimitado",
     manualContactsPerDay: "Ilimitado",

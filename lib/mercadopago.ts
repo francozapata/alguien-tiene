@@ -25,9 +25,9 @@ export const MP_PLAN_CONFIG: Record<PaidPlanType, {
     radarUses: PLAN_BENEFITS.PLUS.radarUses,
   },
   PREMIUM: {
-    title: "Premium semanal - Alguien Tiene",
+    title: "Premium 2 semanas - Alguien Tiene",
     unitPrice: Number(process.env.MP_PRICE_PREMIUM || 0),
-    days: 7,
+    days: 14,
     boosts: PLAN_BENEFITS.PREMIUM.boosts,
     instantSearches: PLAN_BENEFITS.PREMIUM.instantSearches,
     radarUses: PLAN_BENEFITS.PREMIUM.radarUses,
