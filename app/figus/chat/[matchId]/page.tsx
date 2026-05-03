@@ -94,15 +94,6 @@ export default function FiguChatPage() {
       setSending(false);
     }
   }
-
-  async function changeStatus(nextStatus: FiguMatchStatus) {
-    if (!user) return;
-    try {
-      await updateFiguMatchStatus(user, matchId, nextStatus);
-      await load();
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : "No se pudo actualizar el estado.");
-    }
   }
 
   async function deleteChat() {

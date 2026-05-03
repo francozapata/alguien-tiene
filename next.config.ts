@@ -1,6 +1,10 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  allowedDevOrigins: ['permeable-perennially-gertie.ngrok-free.dev'],
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  allowedDevOrigins: [
+    "192.168.0.154",
+    "http://192.168.0.154:3000",
+  ],
 };
 
-module.exports = nextConfig;
+export default nextConfig;
