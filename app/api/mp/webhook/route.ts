@@ -2,20 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseAdmin";
 import { isPaidPlan, MP_PLAN_CONFIG } from "@/lib/mercadopago";
 
-async function fetchPayment(paymentId: string) {
+function getAccessToken() {
   const accessToken = process.env.MP_ACCESS_TOKEN;
   if (!accessToken) throw new Error("Falta MP_ACCESS_TOKEN.");
+  return accessToken;
+}
 
-  const response = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+async function mpGet(path: string) {
+  const response = await fetch(`https://api.mercadopago.com${path}`, {
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${getAccessToken()}`,
     },
     cache: "no-store",
   });
 
-  const payment = await response.json();
-  if (!response.ok) throw new Error(payment?.message || "No se pudo consultar el pago.");
-  return payment;
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data?.message || data?.error || `Mercado Pago error ${response.status}`);
+  }
+
+  return data;
+}
+
+async function fetchPayment(paymentId: string) {
+  return mpGet(`/v1/payments/${paymentId}`);
+}
+
+async function fetchMerchantOrder(orderId: string) {
+  return mpGet(`/merchant_orders/${orderId}`);
 }
 
 async function activatePayment(payment: any) {
@@ -60,11 +75,14 @@ async function activatePayment(payment: any) {
 
   const config = MP_PLAN_CONFIG[plan];
   const now = new Date();
-  const currentUntil = order.user_id
-    ? await supabaseAdmin.from("profiles").select("premium_until").eq("id", order.user_id).single()
-    : null;
 
-  const currentMs = currentUntil?.data?.premium_until ? new Date(currentUntil.data.premium_until).getTime() : 0;
+  const { data: currentProfile } = await supabaseAdmin
+    .from("profiles")
+    .select("premium_until")
+    .eq("id", order.user_id)
+    .single();
+
+  const currentMs = currentProfile?.premium_until ? new Date(currentProfile.premium_until).getTime() : 0;
   const baseTime = plan === "EXTRAS" ? now.getTime() : Math.max(Date.now(), currentMs || 0);
   const premiumUntil = new Date(baseTime + config.days * 24 * 60 * 60 * 1000).toISOString();
 
@@ -115,25 +133,71 @@ async function activatePayment(payment: any) {
   return { activated: true, plan };
 }
 
+function getEventId(request: NextRequest, body: any) {
+  return String(
+    body?.data?.id ||
+    body?.id ||
+    request.nextUrl.searchParams.get("data.id") ||
+    request.nextUrl.searchParams.get("id") ||
+    ""
+  );
+}
+
+function getEventType(request: NextRequest, body: any) {
+  return String(
+    body?.type ||
+    body?.topic ||
+    request.nextUrl.searchParams.get("type") ||
+    request.nextUrl.searchParams.get("topic") ||
+    ""
+  );
+}
+
+async function handleMercadoPagoEvent(request: NextRequest, body: any = {}) {
+  const eventId = getEventId(request, body);
+  const eventType = getEventType(request, body);
+
+  if (!eventId) {
+    return { ok: true, ignored: "Sin id de evento" };
+  }
+
+  // Caso 1: Mercado Pago manda payment.
+  if (eventType === "payment" || eventType === "payments" || eventType === "") {
+    try {
+      const payment = await fetchPayment(eventId);
+      return { ok: true, eventType: eventType || "payment", payment_id: eventId, ...(await activatePayment(payment)) };
+    } catch (error) {
+      // Si no era realmente un payment id, probamos merchant_order antes de fallar.
+      const message = error instanceof Error ? error.message : String(error);
+
+      if (!message.toLowerCase().includes("not found")) {
+        throw error;
+      }
+    }
+  }
+
+  // Caso 2: Mercado Pago manda merchant_order.
+  if (eventType === "merchant_order" || eventType === "merchant_orders" || eventType === "") {
+    const merchantOrder = await fetchMerchantOrder(eventId);
+    const payments = Array.isArray(merchantOrder?.payments) ? merchantOrder.payments : [];
+    const approved = payments.find((p: any) => p?.status === "approved") || payments[0];
+
+    if (!approved?.id) {
+      return { ok: true, eventType: "merchant_order", ignored: "Merchant order sin pagos" };
+    }
+
+    const payment = await fetchPayment(String(approved.id));
+    return { ok: true, eventType: "merchant_order", merchant_order_id: eventId, payment_id: String(approved.id), ...(await activatePayment(payment)) };
+  }
+
+  return { ok: true, ignored: `Evento no soportado: ${eventType}` };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
-    const paymentId = String(
-      body?.data?.id ||
-      body?.id ||
-      request.nextUrl.searchParams.get("data.id") ||
-      request.nextUrl.searchParams.get("id") ||
-      ""
-    );
-
-    if (!paymentId) {
-      return NextResponse.json({ ok: true, ignored: "Sin payment id" });
-    }
-
-    const payment = await fetchPayment(paymentId);
-    const result = await activatePayment(payment);
-
-    return NextResponse.json({ ok: true, ...result });
+    const result = await handleMercadoPagoEvent(request, body);
+    return NextResponse.json(result);
   } catch (error) {
     console.error("MP webhook error", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Error webhook MP" }, { status: 500 });
@@ -142,20 +206,8 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const paymentId = String(
-      request.nextUrl.searchParams.get("data.id") ||
-      request.nextUrl.searchParams.get("id") ||
-      ""
-    );
-
-    if (!paymentId) {
-      return NextResponse.json({ ok: true, ignored: "Sin payment id" });
-    }
-
-    const payment = await fetchPayment(paymentId);
-    const result = await activatePayment(payment);
-
-    return NextResponse.json({ ok: true, ...result });
+    const result = await handleMercadoPagoEvent(request, {});
+    return NextResponse.json(result);
   } catch (error) {
     console.error("MP webhook GET error", error);
     return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Error webhook MP" }, { status: 500 });
