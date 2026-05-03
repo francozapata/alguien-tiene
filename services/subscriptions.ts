@@ -73,8 +73,20 @@ export function getPlanLabel(plan?: string | null) {
 }
 
 export function isPlanActive(profile: any) {
+  const planType = profile?.plan_type || "FREE";
   const until = profile?.premium_until ? new Date(profile.premium_until).getTime() : 0;
-  return Boolean(profile?.is_premium && until > Date.now());
+  const hasActiveExpiration = until > Date.now();
+
+  if (planType === "EXTRAS") {
+    const hasExtras =
+      Number(profile?.boosts_available ?? 0) > 0 ||
+      Number(profile?.instant_searches_available ?? 0) > 0 ||
+      Number(profile?.radar_uses_available ?? 0) > 0;
+
+    return hasActiveExpiration || hasExtras;
+  }
+
+  return Boolean((planType === "PREMIUM" || planType === "PRO_TOTAL") && profile?.is_premium && hasActiveExpiration);
 }
 
 export function getDaysLeft(until?: string | null) {
@@ -239,15 +251,20 @@ export function getPlanExpirationText(subscription?: SubscriptionState | null) {
   const plan = getEffectivePlan(subscription);
   if (plan === "FREE") return "Modo gratis: se renueva diariamente con límites.";
   const days = getDaysLeft(subscription?.premium_until);
-  if (plan === "EXTRAS") return "Extras activos hasta agotarse o hasta que el admin los quite.";
+  if (plan === "EXTRAS") {
+    const days = getDaysLeft(subscription?.premium_until);
+    return days > 0 ? `Extras activos. Te quedan ${days} día${days === 1 ? "" : "s"}.` : "Extras activos hasta agotarse.";
+  }
   return days > 0 ? `Te quedan ${days} día${days === 1 ? "" : "s"} de beneficios.` : "Beneficio vencido.";
 }
 
 export function normalizeSubscription(profile: any): SubscriptionState {
   const active = isPlanActive(profile);
+  const planType = active ? (profile.plan_type || "PREMIUM") : "FREE";
+
   return {
-    plan_type: active ? (profile.plan_type || "PREMIUM") : "FREE",
-    is_premium: active,
+    plan_type: planType,
+    is_premium: active && (planType === "PREMIUM" || planType === "PRO_TOTAL"),
     premium_until: active ? profile.premium_until : null,
     boosts_available: Number(profile.boosts_available ?? 0),
     instant_searches_available: Number(profile.instant_searches_available ?? 0),
@@ -278,7 +295,7 @@ export async function grantUserSubscription(input: {
   const payload: Record<string, unknown> = {
     plan_type: planType,
     is_premium: planType === "PREMIUM" || planType === "PRO_TOTAL",
-    premium_until: planType === "PREMIUM" || planType === "PRO_TOTAL" ? until : null,
+    premium_until: planType === "PREMIUM" || planType === "EXTRAS" || planType === "PRO_TOTAL" ? until : null,
     boosts_available: input.boosts ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 3 : 0),
     instant_searches_available: input.instantSearches ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 5 : 0),
     radar_uses_available: input.radarUses ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 10 : 0),

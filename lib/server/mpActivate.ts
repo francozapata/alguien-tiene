@@ -89,7 +89,7 @@ export async function activateApprovedPayment(payment: any) {
   const payload: Record<string, unknown> = {
     plan_type: plan,
     is_premium: plan === "PREMIUM" || plan === "PRO_TOTAL",
-    premium_until: plan === "EXTRAS" ? null : premiumUntil,
+    premium_until: premiumUntil,
     boosts_available: config.boosts,
     instant_searches_available: config.instantSearches,
     radar_uses_available: config.radarUses,
@@ -112,7 +112,7 @@ export async function activateApprovedPayment(payment: any) {
     .from("subscription_orders")
     .update({
       activated_at: new Date().toISOString(),
-      expires_at: plan === "EXTRAS" ? new Date(Date.now() + config.days * 24 * 60 * 60 * 1000).toISOString() : premiumUntil,
+      expires_at: premiumUntil,
       status: "ACTIVATED",
       updated_at: new Date().toISOString(),
     })

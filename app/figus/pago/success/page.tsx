@@ -44,7 +44,7 @@ function PagoSuccessContent() {
 
         if (data.activated) {
           setState("activated");
-          setMessage("Pago confirmado. Tu plan ya fue activado automáticamente.");
+          setMessage("Pago confirmado. Tu plan ya fue activado automáticamente. Entrá a Perfil o Suscripción para verlo actualizado.");
           return;
         }
 
