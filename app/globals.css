@@ -27,7 +27,7 @@ body {
 
 
 :root {
-  --brand-navy: #0D1B2A;
+  --brand-navy: #000F22;
   --brand-green: #22C55E;
   --brand-blue: #2563EB;
   --brand-yellow: #FBBF24;
@@ -52,7 +52,7 @@ body {
 }
 
 .brand-dark {
-  background: linear-gradient(135deg, #0D1B2A 0%, #07111f 100%);
+  background: linear-gradient(135deg, #000F22 0%, #000F22 100%);
   color: white;
 }
 
@@ -66,10 +66,10 @@ body {
 }
 
 .brand-navy-button {
-  background: #0D1B2A;
+  background: #000F22;
   color: white;
 }
 
 .brand-navy-button:hover {
-  background: #07111f;
+  background: #000F22;
 }

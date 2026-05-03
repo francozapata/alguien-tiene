@@ -20,7 +20,7 @@ export default function Navbar() {
   }
 
   return (
-    <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0D1B2A] shadow-lg">
+    <header className="sticky top-0 z-50 border-b border-white/10 bg-[#000F22] shadow-lg">
       <nav className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-3 sm:px-4">
         <Link href="/figus" className="flex min-w-0 items-center gap-2">
           <Image
@@ -76,7 +76,7 @@ export default function Navbar() {
               </Link>
               <button
                 onClick={handleLogout}
-                className="hidden rounded-full border border-white/20 bg-white px-3 py-2 text-sm font-black text-[#0D1B2A] hover:bg-slate-100 sm:inline-flex"
+                className="hidden rounded-full border border-white/20 bg-white px-3 py-2 text-sm font-black text-[#000F22] hover:bg-slate-100 sm:inline-flex"
               >
                 Cerrar sesión
               </button>

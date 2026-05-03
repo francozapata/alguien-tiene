@@ -63,21 +63,6 @@ export default function FloatingChatButton() {
 
   return (
     <div className="fixed bottom-5 right-5 z-[70] flex items-center gap-3">
-      <a
-        href="https://cafecito.app/alguientiene"
-        rel="noopener"
-        target="_blank"
-        className="hidden rounded-full bg-white p-1 shadow-2xl ring-2 ring-white transition hover:scale-105 sm:block"
-        title="Invitame un café en cafecito.app"
-      >
-        <img
-          src="https://cdn.cafecito.app/imgs/buttons/button_1.png"
-          srcSet="https://cdn.cafecito.app/imgs/buttons/button_1.png 1x, https://cdn.cafecito.app/imgs/buttons/button_1_2x.png 2x, https://cdn.cafecito.app/imgs/buttons/button_1_3.75x.png 3.75x"
-          alt="Invitame un café en cafecito.app"
-          className="h-10 w-auto"
-        />
-      </a>
-
       <Link
         href="/figus/chats"
         onClick={markVisibleAsSeen}
