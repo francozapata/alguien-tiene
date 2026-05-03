@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { FiguShell } from "@/components/figus/FiguShell";
@@ -18,6 +18,8 @@ export default function MiAlbumPage() {
   const [status, setStatus] = useState("Cargando álbum...");
   const [saving, setSaving] = useState(false);
   const [selectedFigu, setSelectedFigu] = useState<number | null>(null);
+  const loadedRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const pages = Math.ceil(TOTAL_FIGUS_MUNDIAL / PAGE_SIZE);
   const start = (page - 1) * PAGE_SIZE + 1;
@@ -54,7 +56,8 @@ export default function MiAlbumPage() {
         ownedFigus.forEach((figu: number) => { next[figu] = Math.max(next[figu] ?? 0, 1); });
         for (const row of data.repeated ?? []) next[row.figu_number] = Math.max(next[row.figu_number] ?? 1, Number(row.quantity) + 1);
         setCounts(next);
-        setStatus("Álbum cargado.");
+        loadedRef.current = true;
+        setStatus("Álbum cargado. Los cambios se guardan automáticamente.");
       } catch (error) {
         setStatus(error instanceof Error ? error.message : "No se pudo cargar el álbum.");
       }
@@ -84,20 +87,39 @@ export default function MiAlbumPage() {
     }
   }
 
-  async function handleSave() {
-    if (!user) return;
+  async function saveAlbumSnapshot(nextOwned: number[], nextRepeated: Record<number, number>) {
+    if (!user || !loadedRef.current) return;
+
     setSaving(true);
-    setStatus("Guardando álbum...");
+    setStatus("Guardando cambios...");
+
     try {
-      await saveOwnedFigus(user, owned);
-      await saveRepeatedFigus(user, repeated);
-      setStatus("Guardado correctamente. Ya podés ir al checkpoint.");
+      await saveOwnedFigus(user, nextOwned);
+      await saveRepeatedFigus(user, nextRepeated);
+      setStatus("Cambios guardados automáticamente.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Error al guardar.");
+      setStatus(error instanceof Error ? error.message : "Error al guardar automáticamente.");
     } finally {
       setSaving(false);
     }
   }
+
+  useEffect(() => {
+    if (!user || !loadedRef.current) return;
+
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+    const snapshotOwned = owned;
+    const snapshotRepeated = repeated;
+
+    saveTimerRef.current = setTimeout(() => {
+      saveAlbumSnapshot(snapshotOwned, snapshotRepeated);
+    }, 650);
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [counts, user, owned, repeated]);
 
   if (loading) return <FiguShell><div className="rounded-[2rem] bg-white p-8">Cargando...</div></FiguShell>;
   if (!user) {
@@ -120,12 +142,12 @@ export default function MiAlbumPage() {
               <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2563EB]">Paso 1 de 3</p>
               <h2 className="mt-1 text-4xl font-black text-[#0D1B2A]">Cargá tu álbum</h2>
               <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-500">
-                Tocá una figurita en la grilla y ajustá la cantidad con + o -. Si tenés 1, significa que la tenés. Si tenés 2 o más, el excedente cuenta como repetida.
+                Tocá una figurita en la grilla y ajustá la cantidad con + o -. Los cambios se guardan automáticamente. Si tenés 1, significa que la tenés. Si tenés 2 o más, el excedente cuenta como repetida.
               </p>
             </div>
-            <button onClick={handleSave} disabled={saving} className="rounded-2xl bg-[#2563EB] px-5 py-3 text-sm font-black text-white disabled:opacity-60">
-              {saving ? "Guardando..." : "Guardar álbum"}
-            </button>
+            <div className={`rounded-2xl px-5 py-3 text-sm font-black ${saving ? "bg-amber-100 text-amber-800" : "bg-emerald-50 text-emerald-700"}`}>
+              {saving ? "Guardando..." : "Autoguardado activo"}
+            </div>
           </div>
 
           <div className="mb-5 grid gap-3 rounded-[2rem] bg-amber-50 p-4 ring-1 ring-amber-100 md:grid-cols-[1fr_auto]">
