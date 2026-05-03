@@ -42,6 +42,7 @@ export default function MatchesPage() {
   const [matches, setMatches] = useState<FiguMatch[]>([]);
   const [status, setStatus] = useState("Cargando intercambios...");
   const [type, setType] = useState("TODOS");
+  const [statusFilter, setStatusFilter] = useState("ACTIVOS");
   const [refreshing, setRefreshing] = useState(false);
 
   async function load() {
@@ -121,6 +122,15 @@ export default function MatchesPage() {
             <button onClick={handleRefresh} disabled={refreshing} className="rounded-2xl bg-[#0D1B2A] px-4 py-3 text-sm font-black text-white disabled:opacity-60">{refreshing ? "Recalculando..." : "Recalcular"}</button>
             <select value={type} onChange={(e) => setType(e.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black outline-none focus:border-sky-500">
               <option value="TODOS">Todos</option><option value="DOUBLE">Solo intercambios</option><option value="SIMPLE">Solo ayudas simples</option>
+            </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-black outline-none focus:border-sky-500">
+              <option value="ACTIVOS">Activos</option>
+              <option value="TODOS">Todos los estados</option>
+              <option value="PENDIENTE">Pendientes</option>
+              <option value="HABLANDO">Hablando</option>
+              <option value="ACORDADO">Acordados</option>
+              <option value="INTERCAMBIADO">Intercambiados</option>
+              <option value="CANCELADO">Cancelados</option>
             </select>
           </div>
         </div>
