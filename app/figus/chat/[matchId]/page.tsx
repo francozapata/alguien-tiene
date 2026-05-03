@@ -94,7 +94,6 @@ export default function FiguChatPage() {
       setSending(false);
     }
   }
-  }
 
   async function deleteChat() {
     if (!user) return;
