@@ -83,7 +83,7 @@ export default function FigusPage() {
             <div>
               <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2563EB]">Estado de cuenta</p>
               <h2 className="mt-1 text-2xl font-black text-[#0D1B2A]">
-                {subscription?.is_premium ? `💎 ${getPlanLabel(subscription.plan_type)}` : subscription?.plan_type === "EXTRAS" ? "⚡ Extras" : "🆓 Modo Gratis"}
+                {subscription?.plan_type && subscription.plan_type !== "FREE" ? `💎 ${getPlanLabel(subscription.plan_type)}` : "🆓 Modo Gratis"}
               </h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">{getPlanExpirationText(subscription)}</p>
               <p className="mt-2 text-xs font-bold leading-5 text-slate-500">

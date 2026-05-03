@@ -10,6 +10,7 @@ import { FiguShell } from "@/components/figus/FiguShell";
 import { expressFiguInterest, getMyMatches, refreshMyFiguMatches, rejectFiguMatch } from "@/services/figus";
 import { FiguMatch } from "@/types/figus";
 import { formatStickerList } from "@/lib/figus/catalog";
+import { getMySubscription, getPlanLimits } from "@/services/subscriptions";
 
 function Chip({ children }: { children: React.ReactNode }) {
   return <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-700 ring-1 ring-slate-200">{children}</span>;
@@ -53,6 +54,10 @@ export default function DescubrirIntercambiosPage() {
     try {
       await refreshMyFiguMatches(user);
       const data = await getMyMatches(user);
+      const subscriptionData = await getMySubscription(user);
+      const limits = getPlanLimits(subscriptionData.subscription);
+      const maxCards = limits.tinderCardsPerDay === "Ilimitado" ? Number.POSITIVE_INFINITY : limits.tinderCardsPerDay;
+      const maxRadius = limits.radiusKm === "Ilimitado" ? Number.POSITIVE_INFINITY : limits.radiusKm;
       setProfileId(data.profile.id);
       const actionableMatches = (data.matches as FiguMatch[]).filter((m) => {
         if (["INTERCAMBIADO", "CANCELADO"].includes(m.status)) return false;
@@ -63,15 +68,19 @@ export default function DescubrirIntercambiosPage() {
         if (amUser1 && m.rejected_by_user1) return false;
         if (!amUser1 && m.rejected_by_user2) return false;
 
-        // Importante: NO ocultamos propuestas con like propio pendiente.
-        // La búsqueda guiada y el modo rápido deben partir de la misma disponibilidad.
-        // Si ya diste like, la tarjeta puede seguir visible hasta que haya match mutuo o se descarte.
-        return true;
-      });
+        const distance = m.distance_km ?? Number.POSITIVE_INFINITY;
+        return distance <= maxRadius;
+      })
+      .sort((a, b) => {
+        const scoreDiff = (b.match_score ?? 0) - (a.match_score ?? 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return (a.distance_km ?? 9999) - (b.distance_km ?? 9999);
+      })
+      .slice(0, maxCards);
 
       setMatches(actionableMatches);
       setIndex(0);
-      setStatus(actionableMatches.length ? "Revisá propuestas por figuritas compatibles y cercanía." : "No hay propuestas disponibles para modo rápido.");
+      setStatus(actionableMatches.length ? "Modo Tinder: mejores intercambios reales 1x1, ordenados por cantidad, cercanía y plan." : "No hay propuestas reales 1x1 dentro del radio de tu plan.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "No se pudo cargar.");
     }

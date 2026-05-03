@@ -157,7 +157,7 @@ export default function PerfilPage() {
               <div>
                 <p className="text-xs font-black uppercase tracking-widest text-[#2563EB]">Suscripción</p>
                 <h2 className="mt-1 text-2xl font-black text-[#0D1B2A]">
-                  {subscription?.is_premium ? `💎 ${getPlanLabel(subscription.plan_type)}` : subscription?.plan_type === "EXTRAS" ? "⚡ Extras" : "🆓 Modo Gratis"}
+                  {subscription?.plan_type && subscription.plan_type !== "FREE" ? `💎 ${getPlanLabel(subscription.plan_type)}` : "🆓 Modo Gratis"}
                 </h2>
                 <p className="mt-1 text-sm font-semibold text-slate-500">{getPlanExpirationText(subscription)}</p>
               </div>

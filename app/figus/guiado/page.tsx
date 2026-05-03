@@ -7,9 +7,10 @@ import { FiguShell } from "@/components/figus/FiguShell";
 import PermissionsPanel from "@/components/figus/PermissionsPanel";
 import RequiredLocationGate from "@/components/figus/RequiredLocationGate";
 import { refreshSmartLocation, syncStoredLocation } from "@/utils/location";
-import { getMyMatches, getNearbyFiguUsers, refreshMyFiguMatches } from "@/services/figus";
-import { FiguMatch, FiguNearbyUser } from "@/types/figus";
+import { getMyMatches, refreshMyFiguMatches } from "@/services/figus";
+import { FiguMatch } from "@/types/figus";
 import { formatStickerList } from "@/lib/figus/catalog";
+import { getMySubscription, getPlanLimits } from "@/services/subscriptions";
 
 type SortMode = "DISTANCIA" | "INTERCAMBIOS";
 
@@ -48,8 +49,9 @@ export default function CaminoGuiadoUsuariosPage() {
   const { user, loading } = useAuth();
   const [profileId, setProfileId] = useState("");
   const [matches, setMatches] = useState<FiguMatch[]>([]);
-  const [nearbyUsers, setNearbyUsers] = useState<FiguNearbyUser[]>([]);
-  const [radiusKm, setRadiusKm] = useState(10);
+  const [radiusKm, setRadiusKm] = useState(3);
+  const [maxRadiusKm, setMaxRadiusKm] = useState(3);
+  const [maxResults, setMaxResults] = useState<number | "Ilimitado">(3);
   const [sortMode, setSortMode] = useState<SortMode>("DISTANCIA");
   const [status, setStatus] = useState("Buscando usuarios cercanos...");
   const [refreshing, setRefreshing] = useState(false);
@@ -58,17 +60,26 @@ export default function CaminoGuiadoUsuariosPage() {
     if (!user) return;
     try {
       await refreshMyFiguMatches(user);
-      const [data, nearby] = await Promise.all([getMyMatches(user), getNearbyFiguUsers(user, radiusKm)]);
+      const [data, subscriptionData] = await Promise.all([getMyMatches(user), getMySubscription(user)]);
+      const limits = getPlanLimits(subscriptionData.subscription);
+      const allowedRadius = limits.radiusKm === "Ilimitado" ? 50 : limits.radiusKm;
+      const allowedResults = limits.manualProfilesPerSearch;
+      setMaxRadiusKm(allowedRadius);
+      setMaxResults(allowedResults);
+      const effectiveRadius = Math.min(radiusKm, allowedRadius);
+      if (radiusKm > allowedRadius) setRadiusKm(allowedRadius);
       setProfileId(data.profile.id);
-      setMatches((data.matches as FiguMatch[]).filter((m) => {
+      const filteredMatches = (data.matches as FiguMatch[]).filter((m) => {
         if (["INTERCAMBIADO", "CANCELADO"].includes(m.status)) return false;
         const amUser1 = m.user1_id === data.profile.id;
         if (amUser1 && m.rejected_by_user1) return false;
         if (!amUser1 && m.rejected_by_user2) return false;
-        return true;
-      }));
-      setNearbyUsers(nearby as FiguNearbyUser[]);
-      setStatus(data.matches.length ? "Usuarios compatibles cargados." : nearby.length ? "No hay match perfecto, pero sí usuarios cercanos." : "Todavía no hay usuarios cercanos.");
+        const distance = m.distance_km ?? Number.POSITIVE_INFINITY;
+        return distance <= effectiveRadius;
+      });
+      const limitedMatches = allowedResults === "Ilimitado" ? filteredMatches : filteredMatches.slice(0, allowedResults);
+      setMatches(limitedMatches);
+      setStatus(limitedMatches.length ? "Modo simple: combinaciones reales 1x1 cargadas." : "No hay combinaciones reales 1x1 dentro del radio de tu plan.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "No se pudo cargar.");
     }
@@ -135,7 +146,7 @@ export default function CaminoGuiadoUsuariosPage() {
               <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2563EB]">Paso 3 de 3</p>
               <h1 className="mt-1 text-4xl font-black text-[#0D1B2A]">Usuarios cercanos</h1>
               <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-500">
-                Listado de usuarios con posibles intercambios. Ordená por cercanía o por mayor cantidad de figus que pueden intercambiar.
+                Modo simple/manual: muestra todas las combinaciones reales 1x1 disponibles dentro del radio y límites de tu plan.
               </p>
             </div>
 
@@ -166,33 +177,13 @@ export default function CaminoGuiadoUsuariosPage() {
           </div>
 
           {sorted.length === 0 ? (
-            <div className="mt-6">
-              {nearbyUsers.length ? (
-                <div className="space-y-3">
-                  <div className="rounded-[2rem] bg-amber-50 p-5 ring-1 ring-amber-200">
-                    <p className="text-lg font-black text-amber-900">No hay intercambio perfecto todavía, pero hay usuarios cerca.</p>
-                    <p className="mt-1 text-sm font-semibold text-amber-800">Te los mostramos para que la app no quede vacía y puedas invitar a cargar repetidas.</p>
-                  </div>
-                  {nearbyUsers.map((nearby) => (
-                    <article key={nearby.user_id} className="rounded-[2rem] bg-white p-5 ring-1 ring-slate-200">
-                      <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-center">
-                        <div>
-                          <h2 className="text-2xl font-black text-[#0D1B2A]">{nearby.display_name || nearby.email || "Usuario cercano"}</h2>
-                          <p className="mt-1 text-sm font-bold text-slate-500">📍 {distanceLabel(nearby.distance_km)} · Álbum {nearby.album_percent ?? 0}% · {nearby.repeated_count ?? 0} repetidas</p>
-                          <p className="mt-1 text-sm font-bold text-slate-500">⭐ {nearby.avg_rating ? `${nearby.avg_rating}/5` : "Sin reputación"} · {nearby.successful_exchanges ?? 0} intercambios cumplidos</p>
-                        </div>
-                        <Link href="/figus/descubrir" className="rounded-2xl bg-[#22C55E] px-5 py-3 text-center text-sm font-black text-white">Ver modo rápido</Link>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-[2rem] border border-dashed border-slate-300 p-10 text-center">
-                  <p className="text-lg font-black text-[#0D1B2A]">No hay usuarios cercanos todavía.</p>
-                  <p className="mt-2 text-sm font-semibold text-slate-500">{status}</p>
-                  <Link href="/figus/mi-album" className="mt-5 inline-flex rounded-2xl bg-[#22C55E] px-5 py-3 text-sm font-black text-white">Ajustar mi álbum</Link>
-                </div>
-              )}
+            <div className="mt-6 rounded-[2rem] border border-dashed border-slate-300 p-10 text-center">
+              <p className="text-lg font-black text-[#0D1B2A]">No hay matches reales por ahora.</p>
+              <p className="mt-2 text-sm font-semibold text-slate-500">{status}</p>
+              <p className="mx-auto mt-2 max-w-xl text-xs font-bold leading-5 text-slate-400">
+                El modo simple ya no muestra “usuarios cercanos” sin intercambio. Solo aparecen personas con intercambio mutuo mano a mano.
+              </p>
+              <Link href="/figus/mi-album" className="mt-5 inline-flex rounded-2xl bg-[#22C55E] px-5 py-3 text-sm font-black text-white">Ajustar mi álbum</Link>
             </div>
           ) : (
             <div className="mt-6 space-y-4">

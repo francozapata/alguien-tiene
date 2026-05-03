@@ -560,7 +560,7 @@ alter table public.profiles add column if not exists plan_updated_at timestamptz
 
 alter table public.profiles drop constraint if exists profiles_plan_type_check;
 alter table public.profiles add constraint profiles_plan_type_check
-check (plan_type in ('FREE', 'PREMIUM', 'EXTRAS', 'PRO_TOTAL'));
+check (plan_type in ('FREE', 'BASICO', 'PLUS', 'PREMIUM'));
 
 create table if not exists public.subscription_events (
   id uuid primary key default gen_random_uuid(),
@@ -1642,7 +1642,7 @@ alter table public.profiles add column if not exists free_usage_day date default
 create table if not exists public.subscription_orders (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
-  plan_type text not null check (plan_type in ('PREMIUM','EXTRAS','PRO_TOTAL')),
+  plan_type text not null check (plan_type in ('BASICO','PLUS','PREMIUM')),
   amount numeric(12,2) not null,
   currency text not null default 'ARS',
   status text not null default 'CREATED',

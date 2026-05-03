@@ -290,13 +290,13 @@ export default function AdminPage() {
 
 
   async function grantPlanToUser(targetUser: AdminUser, planType: PlanType) {
-    const daysRaw = prompt(`¿Cuántos días querés dar de ${planType}?`, planType === "EXTRAS" ? "7" : "7");
+    const daysRaw = prompt(`¿Cuántos días querés dar de ${planType}?`, "7");
     const days = Number(daysRaw || 7);
     if (!Number.isFinite(days) || days <= 0) return;
 
-    const boostsRaw = prompt("Boosts diarios disponibles:", planType === "PRO_TOTAL" || planType === "EXTRAS" ? "3" : "0");
-    const instantRaw = prompt("Búsquedas instantáneas diarias disponibles:", planType === "PRO_TOTAL" || planType === "EXTRAS" ? "5" : "0");
-    const radarRaw = prompt("Radar cercano diario disponible:", planType === "PRO_TOTAL" || planType === "EXTRAS" ? "10" : "0");
+    const boostsRaw = prompt("Boosts diarios disponibles:", "0");
+    const instantRaw = prompt("Búsquedas instantáneas diarias disponibles:", "0");
+    const radarRaw = prompt("Radar cercano diario disponible:", "0");
     const notes = prompt("Nota interna del beneficio:", `Otorgado manualmente por admin: ${planType}`);
 
     try {
@@ -355,7 +355,7 @@ export default function AdminPage() {
       .from("profiles")
       .update({
         is_premium: true,
-        plan_type: targetUser.plan_type === "PRO_TOTAL" ? "PRO_TOTAL" : "PREMIUM",
+        plan_type: targetUser.plan_type && targetUser.plan_type !== "FREE" ? targetUser.plan_type : "PREMIUM",
         premium_until: nextUntil,
         plan_granted_by_admin: true,
         plan_notes: `Admin sumó ${days} días`,
@@ -860,14 +860,14 @@ export default function AdminPage() {
                         >
                           Resetear álbum
                         </button>
-                        <button type="button" onClick={() => grantPlanToUser(appUser, "PREMIUM")} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                        <button type="button" onClick={() => grantPlanToUser(appUser, "BASICO")} className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700">
+                          Dar Básico
+                        </button>
+                        <button type="button" onClick={() => grantPlanToUser(appUser, "PLUS")} className="rounded-xl bg-yellow-500 px-3 py-2 text-sm font-semibold text-white hover:bg-yellow-600">
+                          Dar Plus
+                        </button>
+                        <button type="button" onClick={() => grantPlanToUser(appUser, "PREMIUM")} className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700">
                           Dar Premium
-                        </button>
-                        <button type="button" onClick={() => grantPlanToUser(appUser, "EXTRAS")} className="rounded-xl bg-yellow-500 px-3 py-2 text-sm font-semibold text-white hover:bg-yellow-600">
-                          Dar Extras
-                        </button>
-                        <button type="button" onClick={() => grantPlanToUser(appUser, "PRO_TOTAL")} className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700">
-                          Dar Pro Total
                         </button>
                         <button type="button" onClick={() => extendPremiumDays(appUser)} className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
                           Sumar días

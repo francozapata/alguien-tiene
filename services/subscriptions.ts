@@ -2,34 +2,31 @@ import { User } from "firebase/auth";
 import { supabase } from "@/lib/supabase";
 import { getOrCreateProfile } from "@/services/profiles";
 
-export type PlanType = "FREE" | "PREMIUM" | "EXTRAS" | "PRO_TOTAL";
+export type PlanType = "FREE" | "BASICO" | "PLUS" | "PREMIUM";
+export type PaidPlanType = Exclude<PlanType, "FREE">;
+
+type Unlimited = "Ilimitado";
 
 export const PLAN_PRICES: Record<PlanType, {
   priceLabel: string;
   periodLabel: string;
   paymentEnvKey?: string;
-  fallbackPaymentUrl?: string;
 }> = {
-  FREE: {
-    priceLabel: "$0",
-    periodLabel: "se renueva cada día",
-  },
-  PREMIUM: {
-    priceLabel: "$2.000",
-    periodLabel: "por semana",
-    paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PREMIUM",
-  },
-  EXTRAS: {
-    priceLabel: "$1.500",
-    periodLabel: "por semana",
-    paymentEnvKey: "NEXT_PUBLIC_MP_LINK_EXTRAS",
-  },
-  PRO_TOTAL: {
-    priceLabel: "$3.000",
-    periodLabel: "por semana",
-    paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PRO_TOTAL",
-  },
+  FREE: { priceLabel: "$0", periodLabel: "gratis" },
+  BASICO: { priceLabel: "A definir", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_BASICO" },
+  PLUS: { priceLabel: "A definir", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PLUS" },
+  PREMIUM: { priceLabel: "A definir", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PREMIUM" },
 };
+
+export function normalizePlanType(plan?: string | null): PlanType {
+  if (plan === "BASICO") return "BASICO";
+  if (plan === "PLUS") return "PLUS";
+  if (plan === "PREMIUM") return "PREMIUM";
+  // Compatibilidad con nombres anteriores, por si queda algún usuario viejo en DB.
+  if (plan === "EXTRAS") return "BASICO";
+  if (plan === "PRO_TOTAL") return "PREMIUM";
+  return "FREE";
+}
 
 export function getPlanPrice(plan: PlanType) {
   return PLAN_PRICES[plan].priceLabel;
@@ -45,14 +42,13 @@ export function getPlanPaymentUrl(plan: PlanType) {
   if (!envKey) return "";
 
   const envMap: Record<string, string | undefined> = {
+    NEXT_PUBLIC_MP_LINK_BASICO: process.env.NEXT_PUBLIC_MP_LINK_BASICO,
+    NEXT_PUBLIC_MP_LINK_PLUS: process.env.NEXT_PUBLIC_MP_LINK_PLUS,
     NEXT_PUBLIC_MP_LINK_PREMIUM: process.env.NEXT_PUBLIC_MP_LINK_PREMIUM,
-    NEXT_PUBLIC_MP_LINK_EXTRAS: process.env.NEXT_PUBLIC_MP_LINK_EXTRAS,
-    NEXT_PUBLIC_MP_LINK_PRO_TOTAL: process.env.NEXT_PUBLIC_MP_LINK_PRO_TOTAL,
   };
 
   return envMap[envKey] || "";
 }
-
 
 export type SubscriptionState = {
   plan_type: PlanType;
@@ -66,27 +62,18 @@ export type SubscriptionState = {
 };
 
 export function getPlanLabel(plan?: string | null) {
-  if (plan === "PREMIUM") return "Premium";
-  if (plan === "EXTRAS") return "Extras";
-  if (plan === "PRO_TOTAL") return "Pro Total";
+  const normalized = normalizePlanType(plan);
+  if (normalized === "BASICO") return "Básico";
+  if (normalized === "PLUS") return "Plus";
+  if (normalized === "PREMIUM") return "Premium";
   return "Gratis";
 }
 
 export function isPlanActive(profile: any) {
-  const planType = profile?.plan_type || "FREE";
+  const planType = normalizePlanType(profile?.plan_type);
+  if (planType === "FREE") return false;
   const until = profile?.premium_until ? new Date(profile.premium_until).getTime() : 0;
-  const hasActiveExpiration = until > Date.now();
-
-  if (planType === "EXTRAS") {
-    const hasExtras =
-      Number(profile?.boosts_available ?? 0) > 0 ||
-      Number(profile?.instant_searches_available ?? 0) > 0 ||
-      Number(profile?.radar_uses_available ?? 0) > 0;
-
-    return hasActiveExpiration || hasExtras;
-  }
-
-  return Boolean((planType === "PREMIUM" || planType === "PRO_TOTAL") && profile?.is_premium && hasActiveExpiration);
+  return Boolean(until > Date.now());
 }
 
 export function getDaysLeft(until?: string | null) {
@@ -95,95 +82,128 @@ export function getDaysLeft(until?: string | null) {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
-
-export type BenefitKey = "swipes" | "profiles" | "radius" | "smartMatches" | "seeLikes" | "boosts" | "instantSearches" | "radar";
+export type BenefitKey =
+  | "manualSearches"
+  | "manualResults"
+  | "manualContacts"
+  | "radius"
+  | "tinderCards"
+  | "tinderLikes"
+  | "undo"
+  | "seeLikes"
+  | "priority";
 
 export type BenefitDetail = {
   key: BenefitKey;
   label: string;
   value: string;
   detail: string;
-  remaining?: number | "Ilimitado";
+  remaining?: number | Unlimited;
 };
 
 export const PLAN_BENEFITS: Record<PlanType, {
   label: string;
   short: string;
   durationLabel: string;
-  swipesPerDay: number | "Ilimitado";
-  profilesPerDay: number | "Ilimitado";
-  radiusKm: number | "Ciudad completa";
-  smartMatches: boolean;
+  manualSearchesPerDay: number | Unlimited;
+  manualProfilesPerSearch: number | Unlimited;
+  manualContactsPerDay: number | Unlimited;
+  tinderCardsPerDay: number | Unlimited;
+  tinderLikesPerDay: number | Unlimited;
+  undoPerDay: number | Unlimited;
+  radiusKm: number | Unlimited;
+  advancedFilters: boolean;
   seeLikes: boolean;
-  priority: boolean;
+  priorityWeight: number;
   boosts: number;
   instantSearches: number;
   radarUses: number;
 }> = {
   FREE: {
     label: "Gratis",
-    short: "Para probar y usar la app con límites diarios.",
-    durationLabel: "Se renueva cada día",
-    swipesPerDay: 10,
-    profilesPerDay: 10,
-    radiusKm: 5,
-    smartMatches: false,
+    short: "Para probar la app y conseguir intercambios cercanos con límites diarios.",
+    durationLabel: "Gratis · límites diarios",
+    manualSearchesPerDay: 5,
+    manualProfilesPerSearch: 3,
+    manualContactsPerDay: 1,
+    tinderCardsPerDay: 10,
+    tinderLikesPerDay: 3,
+    undoPerDay: 0,
+    radiusKm: 3,
+    advancedFilters: false,
     seeLikes: false,
-    priority: false,
+    priorityWeight: 0,
+    boosts: 0,
+    instantSearches: 0,
+    radarUses: 0,
+  },
+  BASICO: {
+    label: "Básico",
+    short: "Para uso normal semanal con más búsquedas, más tarjetas y mejor radio.",
+    durationLabel: "Plan semanal",
+    manualSearchesPerDay: 20,
+    manualProfilesPerSearch: 10,
+    manualContactsPerDay: 5,
+    tinderCardsPerDay: 40,
+    tinderLikesPerDay: 15,
+    undoPerDay: 1,
+    radiusKm: 8,
+    advancedFilters: true,
+    seeLikes: false,
+    priorityWeight: 5,
+    boosts: 0,
+    instantSearches: 0,
+    radarUses: 0,
+  },
+  PLUS: {
+    label: "Plus",
+    short: "El punto fuerte: muchas más oportunidades, filtros avanzados y ver interesados.",
+    durationLabel: "Plan semanal",
+    manualSearchesPerDay: "Ilimitado",
+    manualProfilesPerSearch: 30,
+    manualContactsPerDay: 20,
+    tinderCardsPerDay: 150,
+    tinderLikesPerDay: 60,
+    undoPerDay: 5,
+    radiusKm: 20,
+    advancedFilters: true,
+    seeLikes: true,
+    priorityWeight: 12,
     boosts: 0,
     instantSearches: 0,
     radarUses: 0,
   },
   PREMIUM: {
     label: "Premium",
-    short: "Usá la app sin límites.",
-    durationLabel: "$2.000 por semana",
-    swipesPerDay: "Ilimitado",
-    profilesPerDay: "Ilimitado",
+    short: "Para usuarios intensivos: todo ilimitado, máximo alcance y prioridad.",
+    durationLabel: "Plan semanal",
+    manualSearchesPerDay: "Ilimitado",
+    manualProfilesPerSearch: "Ilimitado",
+    manualContactsPerDay: "Ilimitado",
+    tinderCardsPerDay: "Ilimitado",
+    tinderLikesPerDay: "Ilimitado",
+    undoPerDay: "Ilimitado",
     radiusKm: 50,
-    smartMatches: true,
+    advancedFilters: true,
     seeLikes: true,
-    priority: true,
+    priorityWeight: 25,
     boosts: 0,
     instantSearches: 0,
     radarUses: 0,
-  },
-  EXTRAS: {
-    label: "Extras",
-    short: "Acelerá tus resultados con beneficios que se renuevan todos los días.",
-    durationLabel: "$1.500 por semana · beneficios diarios",
-    swipesPerDay: 10,
-    profilesPerDay: 10,
-    radiusKm: 5,
-    smartMatches: false,
-    seeLikes: false,
-    priority: false,
-    boosts: 3,
-    instantSearches: 5,
-    radarUses: 10,
-  },
-  PRO_TOTAL: {
-    label: "Pro Total",
-    short: "Máximo rendimiento: Premium + Extras.",
-    durationLabel: "$3.000 por semana",
-    swipesPerDay: "Ilimitado",
-    profilesPerDay: "Ilimitado",
-    radiusKm: "Ciudad completa",
-    smartMatches: true,
-    seeLikes: true,
-    priority: true,
-    boosts: 3,
-    instantSearches: 5,
-    radarUses: 10,
   },
 };
 
 export function getEffectivePlan(subscription?: SubscriptionState | null): PlanType {
   if (!subscription) return "FREE";
-  if (subscription.plan_type === "PRO_TOTAL") return "PRO_TOTAL";
-  if (subscription.is_premium && subscription.plan_type === "PREMIUM") return "PREMIUM";
-  if (subscription.plan_type === "EXTRAS") return "EXTRAS";
-  return "FREE";
+  const plan = normalizePlanType(subscription.plan_type);
+  if (plan === "FREE") return "FREE";
+  const active = subscription.premium_until ? new Date(subscription.premium_until).getTime() > Date.now() : false;
+  return active ? plan : "FREE";
+}
+
+export function getPlanLimits(planOrSubscription?: PlanType | SubscriptionState | null) {
+  const plan = typeof planOrSubscription === "string" ? normalizePlanType(planOrSubscription) : getEffectivePlan(planOrSubscription);
+  return PLAN_BENEFITS[plan];
 }
 
 export function getBenefitDetails(subscription?: SubscriptionState | null): BenefitDetail[] {
@@ -192,57 +212,64 @@ export function getBenefitDetails(subscription?: SubscriptionState | null): Bene
 
   return [
     {
-      key: "swipes",
-      label: "Swipes diarios",
-      value: config.swipesPerDay === "Ilimitado" ? "Ilimitado" : `${config.swipesPerDay}/día`,
-      detail: config.swipesPerDay === "Ilimitado" ? "Podés usar el modo rápido sin límite diario." : `Tenés ${config.swipesPerDay} swipes gratis por día.`,
-      remaining: config.swipesPerDay,
+      key: "manualSearches",
+      label: "Búsquedas manuales",
+      value: config.manualSearchesPerDay === "Ilimitado" ? "Ilimitadas" : `${config.manualSearchesPerDay}/día`,
+      detail: "El modo simple muestra combinaciones reales 1x1 y deja ordenar por cercanía o cantidad.",
+      remaining: config.manualSearchesPerDay,
     },
     {
-      key: "profiles",
-      label: "Perfiles manuales",
-      value: config.profilesPerDay === "Ilimitado" ? "Ilimitado" : `${config.profilesPerDay}/día`,
-      detail: config.profilesPerDay === "Ilimitado" ? "Podés revisar todos los usuarios cercanos disponibles." : `Podés ver ${config.profilesPerDay} perfiles por día en búsqueda manual.`,
-      remaining: config.profilesPerDay,
+      key: "manualResults",
+      label: "Usuarios por búsqueda",
+      value: config.manualProfilesPerSearch === "Ilimitado" ? "Ilimitados" : `${config.manualProfilesPerSearch}`,
+      detail: "Cantidad máxima visible por búsqueda simple/manual.",
+      remaining: config.manualProfilesPerSearch,
+    },
+    {
+      key: "manualContacts",
+      label: "Contactos diarios",
+      value: config.manualContactsPerDay === "Ilimitado" ? "Ilimitados" : `${config.manualContactsPerDay}/día`,
+      detail: "Cantidad de conversaciones nuevas recomendada para iniciar por día.",
+      remaining: config.manualContactsPerDay,
     },
     {
       key: "radius",
       label: "Radio de búsqueda",
-      value: typeof config.radiusKm === "number" ? `${config.radiusKm} km` : config.radiusKm,
-      detail: config.priority ? "Se priorizan usuarios cercanos y mejores oportunidades." : "Orden básico por cercanía disponible.",
+      value: config.radiusKm === "Ilimitado" ? "Ilimitado" : `${config.radiusKm} km`,
+      detail: "Siempre se usa ubicación real del permiso, no ciudad/barrio escrito a mano.",
     },
     {
-      key: "smartMatches",
-      label: "Matches inteligentes",
-      value: config.smartMatches ? "Activo" : "Básico",
-      detail: config.smartMatches ? "Se priorizan personas que más te sirven para completar el álbum." : "Ves compatibilidades básicas según tus figus.",
+      key: "tinderCards",
+      label: "Tarjetas Tinder",
+      value: config.tinderCardsPerDay === "Ilimitado" ? "Ilimitadas" : `${config.tinderCardsPerDay}/día`,
+      detail: "El modo rápido ordena automáticamente de mejor a peor oportunidad.",
+      remaining: config.tinderCardsPerDay,
+    },
+    {
+      key: "tinderLikes",
+      label: "Me interesa",
+      value: config.tinderLikesPerDay === "Ilimitado" ? "Ilimitados" : `${config.tinderLikesPerDay}/día`,
+      detail: "Cantidad de intereses diarios disponibles en modo rápido.",
+      remaining: config.tinderLikesPerDay,
+    },
+    {
+      key: "undo",
+      label: "Deshacer pase",
+      value: config.undoPerDay === "Ilimitado" ? "Ilimitado" : `${config.undoPerDay}/día`,
+      detail: config.undoPerDay === 0 ? "Disponible desde Básico." : "Permite recuperar una propuesta pasada por error.",
+      remaining: config.undoPerDay,
     },
     {
       key: "seeLikes",
-      label: "Ver likes",
+      label: "Ver interesados",
       value: config.seeLikes ? "Activo" : "Bloqueado",
-      detail: config.seeLikes ? "Podés ver quién quiere intercambiar con vos." : "Disponible con Premium o Pro Total.",
+      detail: config.seeLikes ? "Podés ver quién marcó interés por tus intercambios." : "Disponible desde Plus.",
     },
     {
-      key: "boosts",
-      label: "Boosts",
-      value: String(subscription?.boosts_available ?? config.boosts),
-      detail: "Te da más visibilidad temporal en cercanos y modo rápido.",
-      remaining: subscription?.boosts_available ?? config.boosts,
-    },
-    {
-      key: "instantSearches",
-      label: "Búsquedas instantáneas",
-      value: String(subscription?.instant_searches_available ?? config.instantSearches),
-      detail: "Fuerza una búsqueda nueva de oportunidades en el momento.",
-      remaining: subscription?.instant_searches_available ?? config.instantSearches,
-    },
-    {
-      key: "radar",
-      label: "Radar cercano",
-      value: String(subscription?.radar_uses_available ?? config.radarUses),
-      detail: "Detecta oportunidades cercanas con más prioridad.",
-      remaining: subscription?.radar_uses_available ?? config.radarUses,
+      key: "priority",
+      label: "Prioridad",
+      value: config.priorityWeight > 0 ? "Activa" : "Normal",
+      detail: config.priorityWeight > 0 ? "Tu perfil gana prioridad dentro del ranking inteligente." : "Ranking estándar por intercambio y cercanía.",
     },
   ];
 }
@@ -251,20 +278,16 @@ export function getPlanExpirationText(subscription?: SubscriptionState | null) {
   const plan = getEffectivePlan(subscription);
   if (plan === "FREE") return "Modo gratis: se renueva diariamente con límites.";
   const days = getDaysLeft(subscription?.premium_until);
-  if (plan === "EXTRAS") {
-    const days = getDaysLeft(subscription?.premium_until);
-    return days > 0 ? `Extras activos. Te quedan ${days} día${days === 1 ? "" : "s"}.` : "Extras activos hasta agotarse.";
-  }
-  return days > 0 ? `Te quedan ${days} día${days === 1 ? "" : "s"} de beneficios.` : "Beneficio vencido.";
+  return days > 0 ? `${getPlanLabel(plan)} semanal activo. Te quedan ${days} día${days === 1 ? "" : "s"}.` : "Beneficio vencido.";
 }
 
 export function normalizeSubscription(profile: any): SubscriptionState {
   const active = isPlanActive(profile);
-  const planType = active ? (profile.plan_type || "PREMIUM") : "FREE";
+  const planType = active ? normalizePlanType(profile?.plan_type) : "FREE";
 
   return {
     plan_type: planType,
-    is_premium: active && (planType === "PREMIUM" || planType === "PRO_TOTAL"),
+    is_premium: active && planType !== "FREE",
     premium_until: active ? profile.premium_until : null,
     boosts_available: Number(profile.boosts_available ?? 0),
     instant_searches_available: Number(profile.instant_searches_available ?? 0),
@@ -276,7 +299,9 @@ export function normalizeSubscription(profile: any): SubscriptionState {
 
 export async function getMySubscription(firebaseUser: User) {
   const profile = await getOrCreateProfile(firebaseUser);
-  return { profile, subscription: normalizeSubscription(profile) };
+  await ensureDailyBenefits(profile);
+  const { data: refreshed } = await supabase.from("profiles").select("*").eq("id", profile.id).single();
+  return { profile: refreshed ?? profile, subscription: normalizeSubscription(refreshed ?? profile) };
 }
 
 export async function grantUserSubscription(input: {
@@ -289,19 +314,24 @@ export async function grantUserSubscription(input: {
   notes?: string;
 }) {
   const now = new Date();
-  const until = new Date(now.getTime() + Math.max(1, input.days) * 24 * 60 * 60 * 1000).toISOString();
+  const planType = normalizePlanType(input.planType);
+  const days = planType === "FREE" ? 0 : Math.max(1, input.days || 7);
+  const until = days > 0 ? new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString() : null;
+  const config = PLAN_BENEFITS[planType];
 
-  const planType = input.planType;
   const payload: Record<string, unknown> = {
     plan_type: planType,
-    is_premium: planType === "PREMIUM" || planType === "PRO_TOTAL",
-    premium_until: planType === "PREMIUM" || planType === "EXTRAS" || planType === "PRO_TOTAL" ? until : null,
-    boosts_available: input.boosts ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 3 : 0),
-    instant_searches_available: input.instantSearches ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 5 : 0),
-    radar_uses_available: input.radarUses ?? (planType === "EXTRAS" || planType === "PRO_TOTAL" ? 10 : 0),
-    plan_granted_by_admin: true,
-    plan_notes: input.notes || `Otorgado por admin: ${planType}`,
+    is_premium: planType !== "FREE",
+    premium_until: until,
+    boosts_available: input.boosts ?? config.boosts,
+    instant_searches_available: input.instantSearches ?? config.instantSearches,
+    radar_uses_available: input.radarUses ?? config.radarUses,
+    plan_granted_by_admin: planType !== "FREE",
+    plan_notes: input.notes || (planType === "FREE" ? null : `Otorgado por admin: ${getPlanLabel(planType)} semanal`),
     plan_updated_at: now.toISOString(),
+    free_usage_day: now.toISOString().slice(0, 10),
+    free_swipes_used_today: 0,
+    free_profiles_viewed_today: 0,
   };
 
   const { error } = await supabase.from("profiles").update(payload).eq("id", input.userId);
@@ -324,9 +354,8 @@ export async function clearUserSubscription(userId: string) {
   if (error) throw new Error(error.message);
 }
 
-
 export async function renewDailyPlanBenefits(userId: string, planType: PlanType) {
-  const config = PLAN_BENEFITS[planType];
+  const config = PLAN_BENEFITS[normalizePlanType(planType)];
 
   const { error } = await supabase
     .from("profiles")
@@ -347,7 +376,6 @@ export async function renewDailyPlanBenefits(userId: string, planType: PlanType)
 export async function ensureDailyBenefits(profile: any) {
   const today = new Date().toISOString().slice(0, 10);
   const usageDay = profile?.free_usage_day ? String(profile.free_usage_day).slice(0, 10) : "";
-
   if (usageDay === today) return;
 
   const subscription = normalizeSubscription(profile);

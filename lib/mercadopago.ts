@@ -1,6 +1,6 @@
-import { PlanType, PLAN_BENEFITS } from "@/services/subscriptions";
+import { PaidPlanType, PLAN_BENEFITS } from "@/services/subscriptions";
 
-export const MP_PLAN_CONFIG: Record<Exclude<PlanType, "FREE">, {
+export const MP_PLAN_CONFIG: Record<PaidPlanType, {
   title: string;
   unitPrice: number;
   days: number;
@@ -8,34 +8,34 @@ export const MP_PLAN_CONFIG: Record<Exclude<PlanType, "FREE">, {
   instantSearches: number;
   radarUses: number;
 }> = {
+  BASICO: {
+    title: "Básico semanal - Alguien Tiene",
+    unitPrice: Number(process.env.MP_PRICE_BASICO || 0),
+    days: 7,
+    boosts: PLAN_BENEFITS.BASICO.boosts,
+    instantSearches: PLAN_BENEFITS.BASICO.instantSearches,
+    radarUses: PLAN_BENEFITS.BASICO.radarUses,
+  },
+  PLUS: {
+    title: "Plus semanal - Alguien Tiene",
+    unitPrice: Number(process.env.MP_PRICE_PLUS || 0),
+    days: 7,
+    boosts: PLAN_BENEFITS.PLUS.boosts,
+    instantSearches: PLAN_BENEFITS.PLUS.instantSearches,
+    radarUses: PLAN_BENEFITS.PLUS.radarUses,
+  },
   PREMIUM: {
     title: "Premium semanal - Alguien Tiene",
-    unitPrice: 2000,
+    unitPrice: Number(process.env.MP_PRICE_PREMIUM || 0),
     days: 7,
     boosts: PLAN_BENEFITS.PREMIUM.boosts,
     instantSearches: PLAN_BENEFITS.PREMIUM.instantSearches,
     radarUses: PLAN_BENEFITS.PREMIUM.radarUses,
   },
-  EXTRAS: {
-    title: "Extras semanal - Alguien Tiene",
-    unitPrice: 1500,
-    days: 7,
-    boosts: PLAN_BENEFITS.EXTRAS.boosts,
-    instantSearches: PLAN_BENEFITS.EXTRAS.instantSearches,
-    radarUses: PLAN_BENEFITS.EXTRAS.radarUses,
-  },
-  PRO_TOTAL: {
-    title: "Pro Total semanal - Alguien Tiene",
-    unitPrice: 3000,
-    days: 7,
-    boosts: PLAN_BENEFITS.PRO_TOTAL.boosts,
-    instantSearches: PLAN_BENEFITS.PRO_TOTAL.instantSearches,
-    radarUses: PLAN_BENEFITS.PRO_TOTAL.radarUses,
-  },
 };
 
-export function isPaidPlan(plan: string): plan is Exclude<PlanType, "FREE"> {
-  return plan === "PREMIUM" || plan === "EXTRAS" || plan === "PRO_TOTAL";
+export function isPaidPlan(plan: string): plan is PaidPlanType {
+  return plan === "BASICO" || plan === "PLUS" || plan === "PREMIUM";
 }
 
 export function getAppUrl() {

@@ -83,12 +83,12 @@ export async function activateApprovedPayment(payment: any) {
     .single();
 
   const currentMs = currentProfile?.premium_until ? new Date(currentProfile.premium_until).getTime() : 0;
-  const baseTime = plan === "EXTRAS" ? now.getTime() : Math.max(Date.now(), currentMs || 0);
+  const baseTime = Math.max(Date.now(), currentMs || 0);
   const premiumUntil = new Date(baseTime + config.days * 24 * 60 * 60 * 1000).toISOString();
 
   const payload: Record<string, unknown> = {
     plan_type: plan,
-    is_premium: plan === "PREMIUM" || plan === "PRO_TOTAL",
+    is_premium: true,
     premium_until: premiumUntil,
     boosts_available: config.boosts,
     instant_searches_available: config.instantSearches,

@@ -52,8 +52,8 @@ function PlanCard({ plan, title, icon, helper, userId, dark = false }: PlanCardP
 
   const fakeSubscription = {
     plan_type: plan,
-    is_premium: plan === "PREMIUM" || plan === "PRO_TOTAL",
-    premium_until: plan === "FREE" || plan === "EXTRAS" ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    is_premium: plan !== "FREE",
+    premium_until: plan === "FREE" ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
     boosts_available: PLAN_BENEFITS[plan].boosts,
     instant_searches_available: PLAN_BENEFITS[plan].instantSearches,
     radar_uses_available: PLAN_BENEFITS[plan].radarUses,
@@ -156,26 +156,26 @@ export default function SuscripcionPage() {
 
         <PlanCard
           userId={profileId}
-          plan="PREMIUM"
-          icon="💎"
-          title="Premium"
-          helper="Para quienes quieren buscar sin límites."
-        />
-
-        <PlanCard
-          userId={profileId}
-          plan="EXTRAS"
+          plan="BASICO"
           icon="⚡"
-          title="Extras"
-          helper="Compras rápidas para acelerar resultados."
+          title="Básico"
+          helper="Más búsquedas, más tarjetas y radio semanal ampliado."
         />
 
         <PlanCard
           userId={profileId}
-          plan="PRO_TOTAL"
+          plan="PLUS"
+          icon="💎"
+          title="Plus"
+          helper="El más conveniente: filtros, ver interesados y muchas más oportunidades."
+        />
+
+        <PlanCard
+          userId={profileId}
+          plan="PREMIUM"
           icon="🏆"
-          title="Pro Total"
-          helper="Premium + extras incluidos."
+          title="Premium"
+          helper="Todo ilimitado, mayor alcance y prioridad máxima."
           dark
         />
       </section>

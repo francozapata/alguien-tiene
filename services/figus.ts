@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { getOrCreateProfile } from "@/services/profiles";
 import { MUNDIAL_2026_ALBUM_NAME, TOTAL_FIGUS_MUNDIAL } from "@/types/figus";
 import { parseStickerCounts, parseStickerInput, STICKER_CATALOG } from "@/lib/figus/catalog";
+import { ensureDailyBenefits, getPlanLimits, normalizeSubscription } from "@/services/subscriptions";
 
 export function serializeFigus(figus: number[]) {
   return Array.from(new Set(figus))
@@ -80,23 +81,19 @@ export function calculateNeededFromOwned(ownedFigus: number[]) {
 }
 
 function calculateScore(input: {
-  iGet: number[];
-  otherGets: number[];
-  isDouble: boolean;
-  sameNeighborhood: boolean;
-  sameCity: boolean;
+  exchangeCount: number;
   distanceKm?: number | null;
   otherUrgent?: boolean;
+  otherPriority?: number;
 }) {
+  // Tinder y modo simple comparten el mismo match real 1x1.
+  // El score prioriza cantidad de intercambios, pero en ciudades grandes la cercanía pesa mucho.
   let score = 0;
-  score += Math.min(input.iGet.length * 8, 50);
-  score += Math.min(input.otherGets.length * 5, 22);
-  if (input.isDouble) score += 18;
-  score += distanceScore(input.distanceKm);
-  if (input.sameNeighborhood) score += 8;
-  else if (input.sameCity) score += 4;
-  if (input.otherUrgent) score += 3;
-  return Math.max(1, Math.min(100, score));
+  score += Math.min(input.exchangeCount * 18, 60);
+  score += distanceScore(input.distanceKm) * 1.5;
+  if (input.otherUrgent) score += 4;
+  score += input.otherPriority ?? 0;
+  return Math.max(1, Math.min(100, Math.round(score)));
 }
 
 function suggestMeetingPlace(city?: string | null, neighborhood?: string | null) {
@@ -334,18 +331,22 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
   const { data: myRepeatedRows, error: myRepeatedError } = await supabase.from("user_repeated_figus").select("figu_number, quantity").eq("user_id", userId).eq("album_id", albumId);
   if (myRepeatedError) throw new Error(myRepeatedError.message);
 
-  let query = supabase.from("figu_requests").select("*").eq("album_id", albumId).eq("is_active", true).neq("user_id", userId);
-  if (myRequest.city?.trim()) query = query.ilike("city", myRequest.city.trim());
-  if (myRequest.neighborhood?.trim()) query = query.ilike("neighborhood", myRequest.neighborhood.trim());
+  // No usamos ciudad/barrio escritos a mano para matchear: solo ubicación real guardada por permiso.
+  const { data: otherRequests, error: otherError } = await supabase
+    .from("figu_requests")
+    .select("*")
+    .eq("album_id", albumId)
+    .eq("is_active", true)
+    .neq("user_id", userId)
+    .limit(800);
 
-  const { data: otherRequests, error: otherError } = await query.limit(500);
   if (otherError) throw new Error(otherError.message);
-  const otherUserIds = (otherRequests ?? []).map((request) => request.user_id);
+  const otherUserIds = (otherRequests ?? []).map((request: any) => request.user_id);
   if (otherUserIds.length === 0) return [];
 
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
-    .select("id, lat, lng, city, neighborhood")
+    .select("id, lat, lng, city, neighborhood, plan_type, is_premium, premium_until, boosts_available, instant_searches_available, radar_uses_available, plan_granted_by_admin, plan_notes")
     .in("id", [...otherUserIds, userId]);
 
   if (profilesError) throw new Error(profilesError.message);
@@ -361,59 +362,43 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
   const created = [];
 
   for (const otherRequest of otherRequests ?? []) {
-    const otherRepeated = (allRepeated ?? []).filter((row: any) => row.user_id === otherRequest.user_id && row.quantity > 0).map((row: any) => Number(row.figu_number));
+    const otherProfile = profileById.get(otherRequest.user_id) ?? null;
+    const distanceKm = calculateDistanceKm(myProfile, otherProfile);
+
+    // Sin ubicación real de ambos no generamos match: evitamos errores por texto cargado manualmente.
+    if (distanceKm === null) continue;
+
+    const otherRepeated = (allRepeated ?? [])
+      .filter((row: any) => row.user_id === otherRequest.user_id && row.quantity > 0)
+      .map((row: any) => Number(row.figu_number));
     const otherRepeatedSet = new Set<number>(otherRepeated);
 
     const rawCurrentUserGets: number[] = Array.from(myNeeded).filter((figu) => otherRepeatedSet.has(figu));
     const rawOtherUserGets: number[] = ((otherRequest.needed_figus ?? []) as number[]).map(Number).filter((figu) => myRepeated.has(figu));
 
-    if (rawCurrentUserGets.length === 0 && rawOtherUserGets.length === 0) continue;
+    // Regla final: solo hay match si existe intercambio mutuo mano a mano.
+    if (rawCurrentUserGets.length === 0 || rawOtherUserGets.length === 0) continue;
 
-    const hasBothSides = rawCurrentUserGets.length > 0 && rawOtherUserGets.length > 0;
-    let sortedCurrentUserGets = serializeFigus(rawCurrentUserGets);
-    let sortedOtherUserGets = serializeFigus(rawOtherUserGets);
-    let matchType = "SIMPLE";
-
-    // Regla central: un INTERCAMBIO siempre debe ser justo, misma cantidad para ambos.
-    // Si una persona puede dar 4 y la otra 2, se propone un intercambio 2x2.
-    if (hasBothSides) {
-      const fair = selectFairExchange(sortedCurrentUserGets, sortedOtherUserGets);
-      sortedCurrentUserGets = fair.currentUserGets;
-      sortedOtherUserGets = fair.otherUserGets;
-      matchType = fair.count > 0 ? "DOUBLE" : "SIMPLE";
-    }
-
-    // Ayuda simple: existe compatibilidad de un solo lado. No se fuerza paridad.
-    if (matchType === "SIMPLE") {
-      if (sortedCurrentUserGets.length === 0 && sortedOtherUserGets.length > 0) {
-        // A la otra persona le servís vos, pero a vos no te da nada. Igual puede aparecer como ayuda simple.
-        sortedOtherUserGets = serializeFigus(sortedOtherUserGets);
-      } else {
-        sortedCurrentUserGets = serializeFigus(sortedCurrentUserGets);
-        sortedOtherUserGets = [];
-      }
-    }
-
-    if (sortedCurrentUserGets.length === 0 && sortedOtherUserGets.length === 0) continue;
+    const fair = selectFairExchange(rawCurrentUserGets, rawOtherUserGets);
+    if (fair.count <= 0) continue;
 
     const user1 = userId < otherRequest.user_id ? userId : otherRequest.user_id;
     const user2 = userId < otherRequest.user_id ? otherRequest.user_id : userId;
     const currentUserIsUser1 = user1 === userId;
-    const otherProfile = profileById.get(otherRequest.user_id) ?? null;
-    const distanceKm = calculateDistanceKm(myProfile, otherProfile);
-    const sameNeighborhood = Boolean(myRequest.neighborhood && otherRequest.neighborhood && myRequest.neighborhood.toLowerCase() === otherRequest.neighborhood.toLowerCase());
-    const sameCity = Boolean(myRequest.city && otherRequest.city && myRequest.city.toLowerCase() === otherRequest.city.toLowerCase());
-    const score = calculateScore({ iGet: sortedCurrentUserGets, otherGets: sortedOtherUserGets, isDouble: matchType === "DOUBLE", sameNeighborhood, sameCity, distanceKm, otherUrgent: otherRequest.is_urgent });
-    const city = myRequest.city ?? otherRequest.city ?? null;
-    const neighborhood = myRequest.neighborhood ?? otherRequest.neighborhood ?? null;
+    const otherSubscription = normalizeSubscription(otherProfile);
+    const otherPriority = getPlanLimits(otherSubscription).priorityWeight;
+    const score = calculateScore({ exchangeCount: fair.count, distanceKm, otherUrgent: otherRequest.is_urgent, otherPriority });
+
+    const city = myProfile?.city ?? otherProfile?.city ?? myRequest.city ?? otherRequest.city ?? null;
+    const neighborhood = myProfile?.neighborhood ?? otherProfile?.neighborhood ?? myRequest.neighborhood ?? otherRequest.neighborhood ?? null;
 
     const payload = {
       user1_id: user1,
       user2_id: user2,
       album_id: albumId,
-      match_type: matchType,
-      figus_user1_gets: currentUserIsUser1 ? sortedCurrentUserGets : sortedOtherUserGets,
-      figus_user2_gets: currentUserIsUser1 ? sortedOtherUserGets : sortedCurrentUserGets,
+      match_type: "DOUBLE",
+      figus_user1_gets: currentUserIsUser1 ? fair.currentUserGets : fair.otherUserGets,
+      figus_user2_gets: currentUserIsUser1 ? fair.otherUserGets : fair.currentUserGets,
       city,
       neighborhood,
       match_score: score,
@@ -633,6 +618,17 @@ export async function rejectFiguMatch(firebaseUser: User, matchId: string) {
 
 export async function expressFiguInterest(firebaseUser: User, matchId: string) {
   const profile = await getOrCreateProfile(firebaseUser);
+  await ensureDailyBenefits(profile);
+
+  const { data: freshProfile } = await supabase.from("profiles").select("*").eq("id", profile.id).single();
+  const effectiveProfile = freshProfile ?? profile;
+  const limits = getPlanLimits(normalizeSubscription(effectiveProfile));
+  const maxLikes = limits.tinderLikesPerDay;
+  const usedLikes = Number(effectiveProfile.free_swipes_used_today ?? 0);
+
+  if (maxLikes !== "Ilimitado" && usedLikes >= maxLikes) {
+    throw new Error(`Llegaste al límite de ${maxLikes} “me interesa” diarios de tu plan.`);
+  }
 
   const { data: match, error: matchError } = await supabase
     .from("figu_matches")
@@ -675,6 +671,13 @@ export async function expressFiguInterest(firebaseUser: User, matchId: string) {
     .single();
 
   if (error) throw new Error(error.message);
+
+  if (maxLikes !== "Ilimitado") {
+    await supabase
+      .from("profiles")
+      .update({ free_swipes_used_today: usedLikes + 1, plan_updated_at: new Date().toISOString() })
+      .eq("id", profile.id);
+  }
 
   return { match: data, isMutual };
 }
