@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { getOrCreateProfile } from "@/services/profiles";
 import { supabase } from "@/lib/supabase";
-import { clearUserSubscription, getDaysLeft, getPlanLabel, grantUserSubscription, PlanType } from "@/services/subscriptions";
+import { clearUserSubscription, getBenefitDetails, getDaysLeft, getPlanExpirationText, getPlanLabel, grantUserSubscription, PlanType } from "@/services/subscriptions";
 
 type Report = {
   id: string;
@@ -290,22 +290,85 @@ export default function AdminPage() {
 
 
   async function grantPlanToUser(targetUser: AdminUser, planType: PlanType) {
-    const daysRaw = prompt(`¿Cuántos días querés dar de ${planType}?`, "7");
+    const daysRaw = prompt(`¿Cuántos días querés dar de ${planType}?`, planType === "EXTRAS" ? "7" : "7");
     const days = Number(daysRaw || 7);
     if (!Number.isFinite(days) || days <= 0) return;
+
+    const boostsRaw = prompt("Boosts disponibles:", planType === "PRO_TOTAL" ? "10" : planType === "EXTRAS" ? "3" : "0");
+    const instantRaw = prompt("Búsquedas instantáneas disponibles:", planType === "PRO_TOTAL" ? "999" : planType === "EXTRAS" ? "5" : "0");
+    const radarRaw = prompt("Radar cercano disponible:", planType === "PRO_TOTAL" ? "999" : planType === "EXTRAS" ? "3" : "0");
+    const notes = prompt("Nota interna del beneficio:", `Otorgado manualmente por admin: ${planType}`);
 
     try {
       await grantUserSubscription({
         userId: targetUser.id,
         planType,
         days,
-        notes: `Otorgado manualmente por admin por ${days} días`,
+        boosts: Number(boostsRaw || 0),
+        instantSearches: Number(instantRaw || 0),
+        radarUses: Number(radarRaw || 0),
+        notes: notes || `Otorgado manualmente por admin: ${planType}`,
       });
       alert("Beneficio aplicado.");
       window.location.reload();
     } catch (error) {
       alert(error instanceof Error ? error.message : "No se pudo aplicar.");
     }
+  }
+
+  async function editUserExtras(targetUser: AdminUser) {
+    const boostsRaw = prompt("Nuevo saldo de boosts:", String(targetUser.boosts_available ?? 0));
+    if (boostsRaw === null) return;
+    const instantRaw = prompt("Nuevo saldo de búsquedas instantáneas:", String(targetUser.instant_searches_available ?? 0));
+    if (instantRaw === null) return;
+    const radarRaw = prompt("Nuevo saldo de radar cercano:", String(targetUser.radar_uses_available ?? 0));
+    if (radarRaw === null) return;
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        boosts_available: Math.max(0, Number(boostsRaw || 0)),
+        instant_searches_available: Math.max(0, Number(instantRaw || 0)),
+        radar_uses_available: Math.max(0, Number(radarRaw || 0)),
+        plan_updated_at: new Date().toISOString(),
+      })
+      .eq("id", targetUser.id);
+
+    if (error) {
+      alert("No se pudieron editar los extras.");
+      return;
+    }
+
+    window.location.reload();
+  }
+
+  async function extendPremiumDays(targetUser: AdminUser) {
+    const daysRaw = prompt("¿Cuántos días querés sumar?", "7");
+    const days = Number(daysRaw || 0);
+    if (!Number.isFinite(days) || days <= 0) return;
+
+    const current = targetUser.premium_until ? new Date(targetUser.premium_until).getTime() : Date.now();
+    const baseTime = Math.max(current, Date.now());
+    const nextUntil = new Date(baseTime + days * 24 * 60 * 60 * 1000).toISOString();
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        is_premium: true,
+        plan_type: targetUser.plan_type === "PRO_TOTAL" ? "PRO_TOTAL" : "PREMIUM",
+        premium_until: nextUntil,
+        plan_granted_by_admin: true,
+        plan_notes: `Admin sumó ${days} días`,
+        plan_updated_at: new Date().toISOString(),
+      })
+      .eq("id", targetUser.id);
+
+    if (error) {
+      alert("No se pudieron sumar días.");
+      return;
+    }
+
+    window.location.reload();
   }
 
   async function clearPlanFromUser(targetUser: AdminUser) {
@@ -734,17 +797,43 @@ export default function AdminPage() {
                           {appUser.blocked_reason ? <p className="mt-2 text-xs text-red-600">Motivo: {appUser.blocked_reason}</p> : null}
 
                           <div className="mt-3 rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                            <p className="text-xs font-black uppercase tracking-widest text-slate-400">Suscripción</p>
+                            <p className="text-xs font-black uppercase tracking-widest text-slate-400">Suscripción y beneficios</p>
                             <p className="mt-1 text-sm font-black text-slate-800">
                               {appUser.is_premium && appUser.premium_until && getDaysLeft(appUser.premium_until) > 0
                                 ? `${getPlanLabel(appUser.plan_type)} · ${getDaysLeft(appUser.premium_until)} días restantes`
                                 : getPlanLabel(appUser.plan_type)}
                             </p>
                             <p className="mt-1 text-xs font-bold text-slate-500">
-                              Boosts: {appUser.boosts_available ?? 0} · Búsquedas: {appUser.instant_searches_available ?? 0} · Radar: {appUser.radar_uses_available ?? 0}
+                              {getPlanExpirationText({
+                                plan_type: (appUser.plan_type as PlanType) || "FREE",
+                                is_premium: Boolean(appUser.is_premium),
+                                premium_until: appUser.premium_until,
+                                boosts_available: appUser.boosts_available ?? 0,
+                                instant_searches_available: appUser.instant_searches_available ?? 0,
+                                radar_uses_available: appUser.radar_uses_available ?? 0,
+                                plan_granted_by_admin: Boolean(appUser.plan_granted_by_admin),
+                                plan_notes: appUser.plan_notes,
+                              })}
                             </p>
-                            {appUser.premium_until ? <p className="mt-1 text-xs font-bold text-slate-400">Vence: {new Date(appUser.premium_until).toLocaleDateString("es-AR")}</p> : null}
-                            {appUser.plan_notes ? <p className="mt-1 text-xs font-bold text-slate-400">{appUser.plan_notes}</p> : null}
+                            <div className="mt-3 grid gap-2 md:grid-cols-2">
+                              {getBenefitDetails({
+                                plan_type: (appUser.plan_type as PlanType) || "FREE",
+                                is_premium: Boolean(appUser.is_premium),
+                                premium_until: appUser.premium_until,
+                                boosts_available: appUser.boosts_available ?? 0,
+                                instant_searches_available: appUser.instant_searches_available ?? 0,
+                                radar_uses_available: appUser.radar_uses_available ?? 0,
+                                plan_granted_by_admin: Boolean(appUser.plan_granted_by_admin),
+                                plan_notes: appUser.plan_notes,
+                              }).map((benefit) => (
+                                <div key={benefit.key} className="rounded-xl bg-white p-2 ring-1 ring-slate-200">
+                                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{benefit.label}</p>
+                                  <p className="text-xs font-black text-slate-800">{benefit.value}</p>
+                                </div>
+                              ))}
+                            </div>
+                            {appUser.premium_until ? <p className="mt-2 text-xs font-bold text-slate-400">Vence: {new Date(appUser.premium_until).toLocaleDateString("es-AR")}</p> : null}
+                            {appUser.plan_notes ? <p className="mt-1 text-xs font-bold text-slate-400">Nota: {appUser.plan_notes}</p> : null}
                           </div>
                         </div>
                       </div>
@@ -779,6 +868,12 @@ export default function AdminPage() {
                         </button>
                         <button type="button" onClick={() => grantPlanToUser(appUser, "PRO_TOTAL")} className="rounded-xl bg-violet-600 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-700">
                           Dar Pro Total
+                        </button>
+                        <button type="button" onClick={() => extendPremiumDays(appUser)} className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700">
+                          Sumar días
+                        </button>
+                        <button type="button" onClick={() => editUserExtras(appUser)} className="rounded-xl bg-cyan-600 px-3 py-2 text-sm font-semibold text-white hover:bg-cyan-700">
+                          Editar extras
                         </button>
                         <button type="button" onClick={() => clearPlanFromUser(appUser)} className="rounded-xl bg-white px-3 py-2 text-sm font-semibold text-red-700 ring-1 ring-red-200 hover:bg-red-50">
                           Quitar plan

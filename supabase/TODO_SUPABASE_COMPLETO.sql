@@ -1616,3 +1616,11 @@ insert into public.figu_sticker_catalog (ordinal, code, section, group_key, team
 (993, 'CC13', 'CC', 'CC', 'CC', 'Especiales CC', 13, '⭐'),
 (994, 'CC14', 'CC', 'CC', 'CC', 'Especiales CC', 14, '⭐')
 on conflict (ordinal) do update set code=excluded.code, section=excluded.section, group_key=excluded.group_key, team=excluded.team, team_name=excluded.team_name, number=excluded.number, flag=excluded.flag;
+
+
+-- =========================================================
+-- USO GRATUITO / LIMITES DIARIOS
+-- =========================================================
+alter table public.profiles add column if not exists free_swipes_used_today integer not null default 0;
+alter table public.profiles add column if not exists free_profiles_viewed_today integer not null default 0;
+alter table public.profiles add column if not exists free_usage_day date default current_date;

@@ -33,6 +33,166 @@ export function getDaysLeft(until?: string | null) {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
 }
 
+
+export type BenefitKey = "swipes" | "profiles" | "radius" | "smartMatches" | "seeLikes" | "boosts" | "instantSearches" | "radar";
+
+export type BenefitDetail = {
+  key: BenefitKey;
+  label: string;
+  value: string;
+  detail: string;
+  remaining?: number | "Ilimitado";
+};
+
+export const PLAN_BENEFITS: Record<PlanType, {
+  label: string;
+  short: string;
+  durationLabel: string;
+  swipesPerDay: number | "Ilimitado";
+  profilesPerDay: number | "Ilimitado";
+  radiusKm: number | "Ciudad completa";
+  smartMatches: boolean;
+  seeLikes: boolean;
+  priority: boolean;
+  boosts: number;
+  instantSearches: number;
+  radarUses: number;
+}> = {
+  FREE: {
+    label: "Gratis",
+    short: "Ideal para probar la app sin pagar.",
+    durationLabel: "Se renueva cada día",
+    swipesPerDay: 10,
+    profilesPerDay: 10,
+    radiusKm: 5,
+    smartMatches: false,
+    seeLikes: false,
+    priority: false,
+    boosts: 0,
+    instantSearches: 0,
+    radarUses: 0,
+  },
+  PREMIUM: {
+    label: "Premium",
+    short: "Para buscar sin límites y aparecer mejor.",
+    durationLabel: "Beneficios por tiempo contratado",
+    swipesPerDay: "Ilimitado",
+    profilesPerDay: "Ilimitado",
+    radiusKm: 50,
+    smartMatches: true,
+    seeLikes: true,
+    priority: true,
+    boosts: 0,
+    instantSearches: 0,
+    radarUses: 0,
+  },
+  EXTRAS: {
+    label: "Extras",
+    short: "Para acelerar resultados puntuales.",
+    durationLabel: "Extras disponibles hasta agotarse",
+    swipesPerDay: 10,
+    profilesPerDay: 10,
+    radiusKm: 5,
+    smartMatches: false,
+    seeLikes: false,
+    priority: false,
+    boosts: 3,
+    instantSearches: 5,
+    radarUses: 3,
+  },
+  PRO_TOTAL: {
+    label: "Pro Total",
+    short: "Premium + extras incluidos.",
+    durationLabel: "Máxima ventaja por tiempo contratado",
+    swipesPerDay: "Ilimitado",
+    profilesPerDay: "Ilimitado",
+    radiusKm: "Ciudad completa",
+    smartMatches: true,
+    seeLikes: true,
+    priority: true,
+    boosts: 10,
+    instantSearches: 999,
+    radarUses: 999,
+  },
+};
+
+export function getEffectivePlan(subscription?: SubscriptionState | null): PlanType {
+  if (!subscription) return "FREE";
+  if (subscription.plan_type === "PRO_TOTAL") return "PRO_TOTAL";
+  if (subscription.is_premium && subscription.plan_type === "PREMIUM") return "PREMIUM";
+  if (subscription.plan_type === "EXTRAS") return "EXTRAS";
+  return "FREE";
+}
+
+export function getBenefitDetails(subscription?: SubscriptionState | null): BenefitDetail[] {
+  const plan = getEffectivePlan(subscription);
+  const config = PLAN_BENEFITS[plan];
+
+  return [
+    {
+      key: "swipes",
+      label: "Swipes diarios",
+      value: config.swipesPerDay === "Ilimitado" ? "Ilimitado" : `${config.swipesPerDay}/día`,
+      detail: config.swipesPerDay === "Ilimitado" ? "Podés usar el modo rápido sin límite diario." : `Tenés ${config.swipesPerDay} swipes gratis por día.`,
+      remaining: config.swipesPerDay,
+    },
+    {
+      key: "profiles",
+      label: "Perfiles manuales",
+      value: config.profilesPerDay === "Ilimitado" ? "Ilimitado" : `${config.profilesPerDay}/día`,
+      detail: config.profilesPerDay === "Ilimitado" ? "Podés revisar todos los usuarios cercanos disponibles." : `Podés ver ${config.profilesPerDay} perfiles por día en búsqueda manual.`,
+      remaining: config.profilesPerDay,
+    },
+    {
+      key: "radius",
+      label: "Radio de búsqueda",
+      value: typeof config.radiusKm === "number" ? `${config.radiusKm} km` : config.radiusKm,
+      detail: config.priority ? "Se priorizan usuarios cercanos y mejores oportunidades." : "Orden básico por cercanía disponible.",
+    },
+    {
+      key: "smartMatches",
+      label: "Matches inteligentes",
+      value: config.smartMatches ? "Activo" : "Básico",
+      detail: config.smartMatches ? "Se priorizan personas que más te sirven para completar el álbum." : "Ves compatibilidades básicas según tus figus.",
+    },
+    {
+      key: "seeLikes",
+      label: "Ver likes",
+      value: config.seeLikes ? "Activo" : "Bloqueado",
+      detail: config.seeLikes ? "Podés ver quién quiere intercambiar con vos." : "Disponible con Premium o Pro Total.",
+    },
+    {
+      key: "boosts",
+      label: "Boosts",
+      value: String(subscription?.boosts_available ?? config.boosts),
+      detail: "Te da más visibilidad temporal en cercanos y modo rápido.",
+      remaining: subscription?.boosts_available ?? config.boosts,
+    },
+    {
+      key: "instantSearches",
+      label: "Búsquedas instantáneas",
+      value: String(subscription?.instant_searches_available ?? config.instantSearches),
+      detail: "Fuerza una búsqueda nueva de oportunidades en el momento.",
+      remaining: subscription?.instant_searches_available ?? config.instantSearches,
+    },
+    {
+      key: "radar",
+      label: "Radar cercano",
+      value: String(subscription?.radar_uses_available ?? config.radarUses),
+      detail: "Detecta oportunidades cercanas con más prioridad.",
+      remaining: subscription?.radar_uses_available ?? config.radarUses,
+    },
+  ];
+}
+
+export function getPlanExpirationText(subscription?: SubscriptionState | null) {
+  const plan = getEffectivePlan(subscription);
+  if (plan === "FREE") return "Modo gratis: se renueva diariamente con límites.";
+  const days = getDaysLeft(subscription?.premium_until);
+  if (plan === "EXTRAS") return "Extras activos hasta agotarse o hasta que el admin los quite.";
+  return days > 0 ? `Te quedan ${days} día${days === 1 ? "" : "s"} de beneficios.` : "Beneficio vencido.";
+}
+
 export function normalizeSubscription(profile: any): SubscriptionState {
   const active = isPlanActive(profile);
   return {

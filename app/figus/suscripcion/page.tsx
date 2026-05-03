@@ -4,34 +4,55 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { FiguShell } from "@/components/figus/FiguShell";
-import { getDaysLeft, getMySubscription, getPlanLabel, SubscriptionState } from "@/services/subscriptions";
+import { getBenefitDetails, getMySubscription, getPlanExpirationText, getPlanLabel, PLAN_BENEFITS, PlanType, SubscriptionState } from "@/services/subscriptions";
 
 type PlanCardProps = {
+  plan: PlanType;
   title: string;
   icon: string;
   price: string;
   helper: string;
-  features: string[];
   dark?: boolean;
 };
 
-function PlanCard({ title, icon, price, helper, features, dark = false }: PlanCardProps) {
+function PlanCard({ plan, title, icon, price, helper, dark = false }: PlanCardProps) {
+  const fakeSubscription = {
+    plan_type: plan,
+    is_premium: plan === "PREMIUM" || plan === "PRO_TOTAL",
+    premium_until: plan === "FREE" || plan === "EXTRAS" ? null : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+    boosts_available: PLAN_BENEFITS[plan].boosts,
+    instant_searches_available: PLAN_BENEFITS[plan].instantSearches,
+    radar_uses_available: PLAN_BENEFITS[plan].radarUses,
+    plan_granted_by_admin: false,
+    plan_notes: null,
+  };
+
   return (
     <article className={`rounded-[2.5rem] p-6 shadow-sm ring-1 ${dark ? "bg-[#0D1B2A] text-white ring-[#0D1B2A]" : "bg-white text-[#0D1B2A] ring-slate-200"}`}>
       <p className="text-4xl">{icon}</p>
       <h2 className="mt-3 text-3xl font-black">{title}</h2>
       <p className={`mt-2 text-sm font-semibold ${dark ? "text-white/70" : "text-slate-500"}`}>{helper}</p>
       <p className={`mt-5 text-4xl font-black ${dark ? "text-[#22C55E]" : "text-[#16A34A]"}`}>{price}</p>
-      <p className={`mt-1 text-xs font-black uppercase tracking-widest ${dark ? "text-white/50" : "text-slate-400"}`}>por 7 días</p>
-      <ul className={`mt-5 space-y-2 text-sm font-bold ${dark ? "text-white/85" : "text-slate-600"}`}>
-        {features.map((feature) => <li key={feature}>✔ {feature}</li>)}
-      </ul>
+      <p className={`mt-1 text-xs font-black uppercase tracking-widest ${dark ? "text-white/50" : "text-slate-400"}`}>{PLAN_BENEFITS[plan].durationLabel}</p>
+
+      <div className="mt-5 space-y-3">
+        {getBenefitDetails(fakeSubscription).map((benefit) => (
+          <div key={benefit.key} className={`rounded-2xl p-3 ring-1 ${dark ? "bg-white/10 ring-white/10" : "bg-slate-50 ring-slate-200"}`}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-sm font-black">{benefit.label}</p>
+              <span className={`rounded-full px-2 py-1 text-xs font-black ${dark ? "bg-white/15 text-white" : "bg-white text-[#2563EB] ring-1 ring-slate-200"}`}>{benefit.value}</span>
+            </div>
+            <p className={`mt-1 text-xs font-semibold leading-5 ${dark ? "text-white/70" : "text-slate-500"}`}>{benefit.detail}</p>
+          </div>
+        ))}
+      </div>
+
       <button
         type="button"
         className={`mt-6 w-full rounded-2xl px-5 py-4 text-sm font-black ${dark ? "bg-[#22C55E] text-white" : "bg-[#0D1B2A] text-white"}`}
-        onClick={() => alert("Pago pendiente de conectar con Mercado Pago. Este botón ya queda listo para integrar checkout.")}
+        onClick={() => alert("Pago pendiente de conectar con Mercado Pago o canje de códigos.")}
       >
-        Elegir plan
+        {plan === "FREE" ? "Plan actual gratis" : "Elegir plan"}
       </button>
     </article>
   );
@@ -49,8 +70,6 @@ export default function SuscripcionPage() {
     }
     load();
   }, [user]);
-
-  const daysLeft = getDaysLeft(subscription?.premium_until);
 
   if (loading) return <FiguShell><div className="rounded-[2rem] bg-white p-8">Cargando...</div></FiguShell>;
 
@@ -70,58 +89,50 @@ export default function SuscripcionPage() {
         {user && subscription ? (
           <div className="mt-6 rounded-[2rem] bg-emerald-50 p-5 ring-1 ring-emerald-100">
             <h2 className="text-xl font-black text-emerald-900">Tu estado actual: {getPlanLabel(subscription.plan_type)}</h2>
-            <p className="mt-1 text-sm font-bold text-emerald-700">
-              {subscription.is_premium ? `Te quedan ${daysLeft} día${daysLeft === 1 ? "" : "s"} de premium.` : "Estás usando el modo gratis."}
-            </p>
-            <p className="mt-2 text-sm font-semibold text-slate-600">
-              Boosts: {subscription.boosts_available} · Búsquedas instantáneas: {subscription.instant_searches_available} · Radar: {subscription.radar_uses_available}
-            </p>
+            <p className="mt-1 text-sm font-bold text-emerald-700">{getPlanExpirationText(subscription)}</p>
+            <div className="mt-4 grid gap-2 md:grid-cols-2">
+              {getBenefitDetails(subscription).map((benefit) => (
+                <div key={benefit.key} className="rounded-2xl bg-white/70 p-3 text-xs font-bold text-slate-600 ring-1 ring-emerald-100">
+                  <span className="font-black text-emerald-900">{benefit.label}:</span> {benefit.value}
+                </div>
+              ))}
+            </div>
           </div>
         ) : null}
       </section>
 
-      <section className="mt-6 grid gap-5 lg:grid-cols-3">
+      <section className="mt-6 grid gap-5 xl:grid-cols-4">
         <PlanCard
+          plan="FREE"
+          icon="🆓"
+          title="Gratis"
+          price="$0"
+          helper="Para probar y usar la app con límites diarios."
+        />
+
+        <PlanCard
+          plan="PREMIUM"
           icon="💎"
           title="Premium"
           price="$"
           helper="Para quienes quieren buscar sin límites."
-          features={[
-            "Swipes ilimitados 👉 Podés deslizar sin límite",
-            "Perfiles ilimitados 👉 Nunca te quedás sin usuarios",
-            "Prioridad en matches cercanos 👉 Aparecés primero",
-            "Radio ampliado 👉 Buscás más lejos",
-            "Matches inteligentes 👉 Menos tiempo perdido",
-            "Ver quién te dio like 👉 Sabés quién te quiere",
-          ]}
         />
 
         <PlanCard
+          plan="EXTRAS"
           icon="⚡"
           title="Extras"
           price="$"
           helper="Compras rápidas para acelerar resultados."
-          features={[
-            "Boost de perfil 👉 Más visibilidad inmediata",
-            "Búsqueda instantánea 👉 Encontrás ahora",
-            "Radar cercano 👉 Detecta gente cerca",
-            "Ideal para usar cuando necesitás figus ya",
-          ]}
         />
 
         <PlanCard
+          plan="PRO_TOTAL"
           icon="🏆"
           title="Pro Total"
           price="$"
           helper="Premium + extras incluidos."
           dark
-          features={[
-            "Todo Premium 👉 Sin límites",
-            "Boosts incluidos 👉 Sin pagar extra",
-            "Radar ilimitado 👉 Siempre activo",
-            "Búsquedas instantáneas",
-            "Máxima prioridad en cercanía",
-          ]}
         />
       </section>
 
