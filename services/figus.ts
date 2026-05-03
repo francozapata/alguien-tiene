@@ -350,22 +350,22 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
 
   if (profilesError) throw new Error(profilesError.message);
 
-  const profileById = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  const profileById = new Map<string, any>((profiles ?? []).map((p: any) => [p.id, p]));
   const myProfile = profileById.get(userId) ?? null;
 
   const { data: allRepeated, error: repeatedError } = await supabase.from("user_repeated_figus").select("user_id, figu_number, quantity").eq("album_id", albumId).in("user_id", [...otherUserIds, userId]);
   if (repeatedError) throw new Error(repeatedError.message);
 
-  const myRepeated = new Set((myRepeatedRows ?? []).filter((row) => row.quantity > 0).map((row) => row.figu_number));
-  const myNeeded = new Set(myRequest.needed_figus ?? []);
+  const myRepeated = new Set<number>((myRepeatedRows ?? []).filter((row: any) => row.quantity > 0).map((row: any) => Number(row.figu_number)));
+  const myNeeded = new Set<number>(((myRequest.needed_figus ?? []) as number[]).map(Number));
   const created = [];
 
   for (const otherRequest of otherRequests ?? []) {
-    const otherRepeated = (allRepeated ?? []).filter((row) => row.user_id === otherRequest.user_id && row.quantity > 0).map((row) => row.figu_number);
-    const otherRepeatedSet = new Set(otherRepeated);
+    const otherRepeated = (allRepeated ?? []).filter((row: any) => row.user_id === otherRequest.user_id && row.quantity > 0).map((row: any) => Number(row.figu_number));
+    const otherRepeatedSet = new Set<number>(otherRepeated);
 
-    const rawCurrentUserGets = [...myNeeded].filter((figu) => otherRepeatedSet.has(figu));
-    const rawOtherUserGets = (otherRequest.needed_figus ?? []).filter((figu: number) => myRepeated.has(figu));
+    const rawCurrentUserGets: number[] = Array.from(myNeeded).filter((figu) => otherRepeatedSet.has(figu));
+    const rawOtherUserGets: number[] = ((otherRequest.needed_figus ?? []) as number[]).map(Number).filter((figu) => myRepeated.has(figu));
 
     if (rawCurrentUserGets.length === 0 && rawOtherUserGets.length === 0) continue;
 
