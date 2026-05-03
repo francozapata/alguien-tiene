@@ -9988,7 +9988,7 @@ export function stickerLabel(value?: number | null) {
   if (!value) return "";
   const sticker = STICKER_BY_ORDINAL.get(value);
   if (!sticker) return String(value);
-  return `${sticker.flag} ${stickerDisplayName(value)}`;
+  return stickerDisplayName(value);
 }
 
 export function stickerFromCode(code: string) {

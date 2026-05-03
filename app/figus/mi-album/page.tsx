@@ -166,7 +166,6 @@ export default function MiAlbumPage() {
                   {section.teams.map((team) => (
                     <div key={`${section.section}-${team.team}`}>
                       <div className="mb-2 flex items-center gap-2">
-                        <span className="text-xl">{team.flag}</span>
                         <p className="text-sm font-black uppercase tracking-widest text-[#2563EB]">{stickerTeamTitle(team.stickers[0])}</p>
                       </div>
                       <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8 xl:grid-cols-10">
@@ -183,7 +182,6 @@ export default function MiAlbumPage() {
                               onClick={() => selectFigu(n)}
                               className={`relative flex min-h-16 flex-col items-center justify-center rounded-2xl px-2 py-2 text-xs font-black ring-1 transition ${selected ? "bg-[#0D1B2A] text-white ring-slate-950" : active ? "bg-[#22C55E] text-white ring-emerald-500" : "bg-white text-slate-700 ring-slate-200 hover:bg-sky-50"}`}
                             >
-                              <span className="text-base">{sticker.flag}</span>
                               <span>{sticker.code}</span>
                               <span className={`mt-0.5 text-[10px] leading-none ${active ? "text-white/90" : "text-slate-300"}`}>{qty > 0 ? `x${qty}` : "—"}</span>
                             </button>
