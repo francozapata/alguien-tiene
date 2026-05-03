@@ -130,8 +130,8 @@ export async function getNearbyFiguUsers(firebaseUser: User, radiusKm = 10) {
     ids.length ? supabase.from("figu_user_reputation").select("*").in("user_id", ids) : Promise.resolve({ data: [] }),
   ] as any);
 
-  const progressByUser = new Map((progressRows ?? []).map((row: any) => [row.user_id, row]));
-  const reputationByUser = new Map((reputationRows ?? []).map((row: any) => [row.user_id, row]));
+  const progressByUser = new Map<string, any>((progressRows ?? []).map((row: any) => [row.user_id, row]));
+  const reputationByUser = new Map<string, any>((reputationRows ?? []).map((row: any) => [row.user_id, row]));
   const repeatedByUser = new Map<string, number>();
 
   for (const row of repeatedRows ?? []) {
@@ -262,14 +262,14 @@ async function enrichMatchesWithReputation(matches: any[], profileId: string, al
       .in("user_id", otherIds),
   ]);
 
-  const percentByUser = new Map(
+  const percentByUser = new Map<string, number>(
     (progressRows ?? []).map((row: any) => [
       row.user_id,
       Math.round(((row.owned_figus?.length ?? 0) / TOTAL_FIGUS_MUNDIAL) * 1000) / 10,
     ])
   );
 
-  const reputationByUser = new Map((reputationRows ?? []).map((row: any) => [row.user_id, row]));
+  const reputationByUser = new Map<string, any>((reputationRows ?? []).map((row: any) => [row.user_id, row]));
 
   for (const match of matches as any[]) {
     for (const side of ["user1", "user2"]) {
