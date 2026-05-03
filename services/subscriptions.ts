@@ -13,9 +13,9 @@ export const PLAN_PRICES: Record<PlanType, {
   paymentEnvKey?: string;
 }> = {
   FREE: { priceLabel: "$0", periodLabel: "gratis" },
-  BASICO: { priceLabel: "A definir", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_BASICO" },
-  PLUS: { priceLabel: "A definir", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PLUS" },
-  PREMIUM: { priceLabel: "A definir", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PREMIUM" },
+  BASICO: { priceLabel: "$900", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_BASICO" },
+  PLUS: { priceLabel: "$1.900", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PLUS" },
+  PREMIUM: { priceLabel: "$2.500", periodLabel: "por semana", paymentEnvKey: "NEXT_PUBLIC_MP_LINK_PREMIUM" },
 };
 
 export function normalizePlanType(plan?: string | null): PlanType {
