@@ -11,8 +11,8 @@ import { notifyLocalMatch } from "@/utils/notifications";
 
 function exchangeText(match: FiguMatch, profileId: string) {
   const amUser1 = match.user1_id === profileId;
-  const iGet = amUser1 ? match.user1_gets_figus : match.user2_gets_figus;
-  const otherGets = amUser1 ? match.user2_gets_figus : match.user1_gets_figus;
+  const iGet = amUser1 ? match.figus_user1_gets : match.figus_user2_gets;
+  const otherGets = amUser1 ? match.figus_user2_gets : match.figus_user1_gets;
   return `Recibís ${formatStickerList(iGet, 8)} · Entregás ${formatStickerList(otherGets, 8)}`;
 }
 

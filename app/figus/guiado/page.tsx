@@ -19,8 +19,8 @@ function distanceValue(match: FiguMatch) {
 
 function exchangeCount(match: FiguMatch, profileId: string) {
   const amUser1 = match.user1_id === profileId;
-  const iGet = amUser1 ? match.user1_gets_figus : match.user2_gets_figus;
-  const otherGets = amUser1 ? match.user2_gets_figus : match.user1_gets_figus;
+  const iGet = amUser1 ? match.figus_user1_gets : match.figus_user2_gets;
+  const otherGets = amUser1 ? match.figus_user2_gets : match.figus_user1_gets;
   return Math.min(iGet?.length ?? 0, otherGets?.length ?? 0);
 }
 
@@ -193,8 +193,8 @@ export default function CaminoGuiadoUsuariosPage() {
               {sorted.map((match) => {
                 const amUser1 = match.user1_id === profileId;
                 const other = amUser1 ? match.user2 : match.user1;
-                const iGet = amUser1 ? match.user1_gets_figus : match.user2_gets_figus;
-                const otherGets = amUser1 ? match.user2_gets_figus : match.user1_gets_figus;
+                const iGet = amUser1 ? match.figus_user1_gets : match.figus_user2_gets;
+                const otherGets = amUser1 ? match.figus_user2_gets : match.figus_user1_gets;
                 const exchange = exchangeCount(match, profileId);
                 const percent = albumPercent(other);
                 const location = [match.city, match.neighborhood].filter(Boolean).join(" · ");
