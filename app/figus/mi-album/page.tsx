@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { FiguShell } from "@/components/figus/FiguShell";
 import { getMyFiguBootstrap, saveOwnedFigus, saveRepeatedFigus } from "@/services/figus";
 import { TOTAL_FIGUS_MUNDIAL } from "@/types/figus";
-import { groupedStickerCatalog, parseStickerToken, stickerCode, stickerLabel } from "@/lib/figus/catalog";
+import { groupedStickerCatalog, parseStickerToken, stickerDisplayName, stickerLabel, stickerTeamTitle } from "@/lib/figus/catalog";
 
 const PAGE_SIZE = 100;
 
@@ -167,7 +167,7 @@ export default function MiAlbumPage() {
                     <div key={`${section.section}-${team.team}`}>
                       <div className="mb-2 flex items-center gap-2">
                         <span className="text-xl">{team.flag}</span>
-                        <p className="text-sm font-black uppercase tracking-widest text-[#2563EB]">{team.team} · {team.teamName}</p>
+                        <p className="text-sm font-black uppercase tracking-widest text-[#2563EB]">{stickerTeamTitle(team.stickers[0])}</p>
                       </div>
                       <div className="grid grid-cols-4 gap-2 sm:grid-cols-6 md:grid-cols-8 xl:grid-cols-10">
                         {team.stickers.map((sticker) => {

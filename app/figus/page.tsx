@@ -7,7 +7,7 @@ import { FiguShell } from "@/components/figus/FiguShell";
 import { getFiguDashboard, getMyFiguBootstrap } from "@/services/figus";
 import { TOTAL_FIGUS_MUNDIAL } from "@/types/figus";
 import OnboardingCard from "@/components/figus/OnboardingCard";
-import { getBenefitDetails, getMySubscription, getPlanExpirationText, getPlanLabel, SubscriptionState } from "@/services/subscriptions";
+import { getMySubscription, getPlanExpirationText, getPlanLabel, SubscriptionState } from "@/services/subscriptions";
 
 type Dashboard = Awaited<ReturnType<typeof getFiguDashboard>>;
 
@@ -79,25 +79,16 @@ export default function FigusPage() {
       <OnboardingCard />
       {user ? (
         <section className="mb-6 rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-start">
+          <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2563EB]">Estado de cuenta</p>
               <h2 className="mt-1 text-2xl font-black text-[#0D1B2A]">
                 {subscription?.is_premium ? `💎 ${getPlanLabel(subscription.plan_type)}` : subscription?.plan_type === "EXTRAS" ? "⚡ Extras" : "🆓 Modo Gratis"}
               </h2>
               <p className="mt-1 text-sm font-semibold text-slate-500">{getPlanExpirationText(subscription)}</p>
-
-              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                {getBenefitDetails(subscription).map((benefit) => (
-                  <div key={benefit.key} className="rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-xs font-black uppercase tracking-widest text-slate-400">{benefit.label}</p>
-                      <span className="rounded-full bg-white px-2 py-1 text-xs font-black text-[#2563EB] ring-1 ring-slate-200">{benefit.value}</span>
-                    </div>
-                    <p className="mt-2 text-xs font-bold leading-5 text-slate-600">{benefit.detail}</p>
-                  </div>
-                ))}
-              </div>
+              <p className="mt-2 text-xs font-bold leading-5 text-slate-500">
+                Para ver el detalle completo de beneficios, vencimientos, extras disponibles y límites diarios, entrá a tu perfil en el apartado <span className="font-black text-[#0D1B2A]">Suscripción</span> o tocá el botón <span className="font-black text-[#22C55E]">Suscribite</span>.
+              </p>
             </div>
             <Link href="/figus/suscripcion" className="rounded-2xl bg-[#22C55E] px-5 py-3 text-center text-sm font-black text-white">
               Suscribite $

@@ -9959,6 +9959,26 @@ export const STICKER_BY_CODE = new Map(STICKER_CATALOG.map((sticker) => [sticker
 
 export const STICKER_SECTIONS = Array.from(new Set(STICKER_CATALOG.map((sticker) => sticker.section)));
 
+
+export function stickerTeamTitle(sticker: StickerEntry) {
+  if (sticker.team.length === 3 && sticker.group !== "FWC" && sticker.group !== "CC") {
+    return `${sticker.teamName} (${sticker.team})`;
+  }
+  return sticker.teamName;
+}
+
+export function stickerDisplayName(value?: number | null) {
+  if (!value) return "";
+  const sticker = STICKER_BY_ORDINAL.get(value);
+  if (!sticker) return String(value);
+
+  if (sticker.team.length === 3 && sticker.group !== "FWC" && sticker.group !== "CC") {
+    return `${sticker.teamName} (${sticker.team}) · ${sticker.code}`;
+  }
+
+  return sticker.code;
+}
+
 export function stickerCode(value?: number | null) {
   if (!value) return "";
   return STICKER_BY_ORDINAL.get(value)?.code ?? String(value);
@@ -9968,7 +9988,7 @@ export function stickerLabel(value?: number | null) {
   if (!value) return "";
   const sticker = STICKER_BY_ORDINAL.get(value);
   if (!sticker) return String(value);
-  return `${sticker.flag} ${sticker.code}`;
+  return `${sticker.flag} ${stickerDisplayName(value)}`;
 }
 
 export function stickerFromCode(code: string) {

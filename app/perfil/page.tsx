@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import GoogleLoginButton from "@/components/GoogleLoginButton";
 import { getOrCreateProfile } from "@/services/profiles";
 import { supabase } from "@/lib/supabase";
+import { getBenefitDetails, getMySubscription, getPlanExpirationText, getPlanLabel, SubscriptionState } from "@/services/subscriptions";
 
 export default function PerfilPage() {
   const { user, loading } = useAuth();
@@ -15,13 +16,16 @@ export default function PerfilPage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [subscription, setSubscription] = useState<SubscriptionState | null>(null);
 
   useEffect(() => {
     async function loadProfile() {
       if (!user) return;
 
       const profile = await getOrCreateProfile(user);
+      const subscriptionData = await getMySubscription(user);
 
+      setSubscription(subscriptionData.subscription);
       setProfileId(profile.id);
       setName(profile.display_name || user.displayName || "");
       setAvatarUrl(user.photoURL || profile.avatar_url || null);
@@ -146,6 +150,33 @@ export default function PerfilPage() {
 
           <div className="mt-6 rounded-2xl bg-slate-50 p-4 text-sm font-semibold text-slate-600">
             Por seguridad y consistencia, la foto de perfil no se cambia desde la app. Se usa la imagen asociada a tu cuenta de Google.
+          </div>
+
+          <div className="mt-6 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-widest text-[#2563EB]">Suscripción</p>
+                <h2 className="mt-1 text-2xl font-black text-[#0D1B2A]">
+                  {subscription?.is_premium ? `💎 ${getPlanLabel(subscription.plan_type)}` : subscription?.plan_type === "EXTRAS" ? "⚡ Extras" : "🆓 Modo Gratis"}
+                </h2>
+                <p className="mt-1 text-sm font-semibold text-slate-500">{getPlanExpirationText(subscription)}</p>
+              </div>
+              <Link href="/figus/suscripcion" className="rounded-2xl bg-[#22C55E] px-4 py-3 text-center text-sm font-black text-white">
+                Ver planes
+              </Link>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {getBenefitDetails(subscription).map((benefit) => (
+                <div key={benefit.key} className="rounded-2xl bg-white p-3 ring-1 ring-slate-200">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs font-black uppercase tracking-widest text-slate-400">{benefit.label}</p>
+                    <span className="rounded-full bg-slate-50 px-2 py-1 text-xs font-black text-[#2563EB] ring-1 ring-slate-200">{benefit.value}</span>
+                  </div>
+                  <p className="mt-2 text-xs font-bold leading-5 text-slate-600">{benefit.detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
 
           {message && (
