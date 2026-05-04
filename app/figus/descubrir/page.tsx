@@ -35,6 +35,7 @@ export default function DescubrirIntercambiosPage() {
   const [status, setStatus] = useState("Cargando intercambios...");
   const [interestStatus, setInterestStatus] = useState("");
   const [loadingAction, setLoadingAction] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   async function load() {
     if (!user) return;
@@ -53,6 +54,7 @@ export default function DescubrirIntercambiosPage() {
   }
 
   useEffect(() => {
+    setShowDebug(typeof window !== "undefined" && window.localStorage.getItem("figus_tinder_debug") === "1");
     async function start() {
       if (user) {
         await syncStoredLocation(user);
@@ -209,7 +211,7 @@ export default function DescubrirIntercambiosPage() {
           <p className="mx-auto mt-2 max-w-xl text-xs font-bold leading-5 text-slate-400">
             El modo Tinder recalcula tarjetas desde álbum y repetidas. El modo simple queda separado.
           </p>
-          {stats?.debug ? (
+          {showDebug && stats?.debug ? (
             <details className="mx-auto mt-4 max-w-xl rounded-2xl bg-slate-50 p-4 text-left text-xs font-bold text-slate-500 ring-1 ring-slate-200">
               <summary className="cursor-pointer text-slate-700">Diagnóstico Tinder</summary>
               <pre className="mt-3 whitespace-pre-wrap">{JSON.stringify(stats.debug, null, 2)}</pre>

@@ -1184,7 +1184,8 @@ export async function getMyTinderData(firebaseUser: User) {
   const likedByOther = (m: any) => isUser1(m) ? Boolean(m.liked_by_user2) : Boolean(m.liked_by_user1);
   const rejectedByMe = (m: any) => isUser1(m) ? Boolean(m.rejected_by_user1) : Boolean(m.rejected_by_user2);
   const hiddenByMe = (m: any) => isUser1(m) ? Boolean(m.hidden_by_user1) : Boolean(m.hidden_by_user2);
-  const isMutualOrChat = (m: any) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(m.status || "").toUpperCase());
+  const isClosedTrade = (m: any) => Boolean(m.trade_applied) || ["INTERCAMBIADO", "CANCELADO"].includes(String(m.status || "").toUpperCase());
+  const isAlreadyTinderMutual = (m: any) => Boolean(m.mutual_interest);
   const passesRadius = (m: any) => typeof m.distance_km !== "number" || m.distance_km <= maxRadius;
   const hasRealExchange = (m: any) => {
     const iGet = isUser1(m) ? m.figus_user1_gets : m.figus_user2_gets;
@@ -1206,7 +1207,10 @@ export async function getMyTinderData(firebaseUser: User) {
   // o lo que el usuario ocultó explícitamente.
   const tinderCandidates = (enriched as any[]).filter((m) => {
     if (hiddenByMe(m)) return false;
-    if (isMutualOrChat(m)) return false; // el chat solo nace por match mutuo; no repetir chats como tarjetas.
+    if (isClosedTrade(m)) return false;
+    // No filtramos status HABLANDO/ACORDADO: el modo simple puede abrir contacto
+    // sin que exista match mutuo Tinder. Solo se oculta si Tinder ya fue mutuo.
+    if (isAlreadyTinderMutual(m)) return false;
 
     const myGets = isUser1(m) ? m.figus_user1_gets : m.figus_user2_gets;
     const otherGets = isUser1(m) ? m.figus_user2_gets : m.figus_user1_gets;
@@ -1235,7 +1239,13 @@ export async function getMyTinderData(firebaseUser: User) {
   // 4) si ya diste like y el otro no respondió, no la repite como tarjeta principal.
   const freshQueue = tinderCandidates.filter((m) => !likedByMe(m) && !rejectedByMe(m));
   const rejectedFallback = tinderCandidates.filter((m) => !likedByMe(m));
-  const baseQueue = incomingLikes.length > 0 ? incomingLikes : (freshQueue.length > 0 ? freshQueue : rejectedFallback);
+  const baseQueue = incomingLikes.length > 0
+    ? incomingLikes
+    : freshQueue.length > 0
+      ? freshQueue
+      : rejectedFallback.length > 0
+        ? rejectedFallback
+        : tinderCandidates;
   const rawQueue = sortCards(baseQueue);
   debug.usableCards = rawQueue.length;
 
@@ -1243,7 +1253,7 @@ export async function getMyTinderData(firebaseUser: User) {
   debug.finalQueue = queue.length;
 
   const waitingForOther = (enriched as any[]).filter((m) => likedByMe(m) && !likedByOther(m) && !m.mutual_interest).length;
-  const mutual = (enriched as any[]).filter((m) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO"].includes(String(m.status || "").toUpperCase())).length;
+  const mutual = (enriched as any[]).filter((m) => Boolean(m.mutual_interest)).length;
 
   return {
     profile,
