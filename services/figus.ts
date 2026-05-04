@@ -901,21 +901,35 @@ export async function getMyTinderData(firebaseUser: User) {
     return !["HABLANDO", "ACORDADO", "INTERCAMBIADO", "CANCELADO"].includes(status) && !m.mutual_interest;
   };
 
-  const incomingLikes = all
-    .filter((m) => isTinderCandidate(m) && likedByOther(m) && !likedByMe(m) && !rejectedByMe(m))
-    .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
+  const sortTinderCards = (items: any[]) => items.sort((a, b) => {
+    // Si alguien ya me dio like, aparece primero. Después cantidad/score y cercanía.
+    const likeDiff = Number(likedByOther(b)) - Number(likedByOther(a));
+    if (likeDiff !== 0) return likeDiff;
+    const scoreDiff = (b.match_score ?? 0) - (a.match_score ?? 0);
+    if (scoreDiff !== 0) return scoreDiff;
+    return (a.distance_km ?? 9999) - (b.distance_km ?? 9999);
+  });
 
-  const queue = all
-    .filter((m) => isTinderCandidate(m) && !likedByMe(m) && !rejectedByMe(m))
-    .sort((a, b) => {
-      // Si alguien ya me dio like, aparece primero. Después cantidad/score y cercanía.
-      const likeDiff = Number(likedByOther(b)) - Number(likedByOther(a));
-      if (likeDiff !== 0) return likeDiff;
-      const scoreDiff = (b.match_score ?? 0) - (a.match_score ?? 0);
-      if (scoreDiff !== 0) return scoreDiff;
-      return (a.distance_km ?? 9999) - (b.distance_km ?? 9999);
-    })
-    .slice(0, maxCards);
+  const tinderCandidates = all.filter((m) => isTinderCandidate(m));
+
+  const incomingLikes = sortTinderCards(
+    tinderCandidates.filter((m) => likedByOther(m) && !likedByMe(m) && !rejectedByMe(m))
+  );
+
+  // Cola normal: no muestro lo que ya marqué o descarté.
+  const strictQueue = sortTinderCards(
+    tinderCandidates.filter((m) => !likedByMe(m) && !rejectedByMe(m))
+  );
+
+  // Fallback importante para la app real/testeo: con pocos usuarios, si el usuario
+  // descartó tarjetas en pruebas anteriores, Tinder quedaba vacío aunque el modo
+  // simple siguiera mostrando intercambios reales. Cuando no hay cola fresca,
+  // reofrecemos descartados reales 1x1. Los likes enviados siguen sin repetirse.
+  const fallbackQueue = strictQueue.length > 0
+    ? strictQueue
+    : sortTinderCards(tinderCandidates.filter((m) => !likedByMe(m)));
+
+  const queue = fallbackQueue.slice(0, maxCards);
 
   const waitingForOther = all.filter((m) => likedByMe(m) && !likedByOther(m) && !m.mutual_interest).length;
   const mutual = all.filter((m) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO"].includes(String(m.status || ""))).length;
