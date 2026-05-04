@@ -858,13 +858,16 @@ export async function expressFiguInterest(firebaseUser: User, matchId: string) {
 export async function getMyTinderData(firebaseUser: User) {
   const profile = await getOrCreateProfile(firebaseUser);
   const album = await getMundialAlbum();
+
+  // Primero recalculamos, igual que el modo simple.
+  // Si el modo simple tiene resultados, Tinder debe partir de la misma base.
   await refreshMyFiguMatches(firebaseUser);
 
   const { data: freshProfile } = await supabase.from("profiles").select("*").eq("id", profile.id).single();
   const effectiveProfile = freshProfile ?? profile;
   const limits = getPlanLimits(normalizeSubscription(effectiveProfile));
-  const maxCards = limits.tinderCardsPerDay === "Ilimitado" ? Number.POSITIVE_INFINITY : limits.tinderCardsPerDay;
-  const maxRadius = limits.radiusKm === "Ilimitado" ? Number.POSITIVE_INFINITY : limits.radiusKm;
+  const maxCards = limits.tinderCardsPerDay === "Ilimitado" ? Number.POSITIVE_INFINITY : Number(limits.tinderCardsPerDay ?? 0);
+  const maxRadius = limits.radiusKm === "Ilimitado" ? Number.POSITIVE_INFINITY : Number(limits.radiusKm ?? 0);
 
   const { data, error } = await supabase
     .from("figu_matches")
@@ -872,7 +875,6 @@ export async function getMyTinderData(firebaseUser: User) {
     .eq("album_id", album.id)
     .eq("is_active", true)
     .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
-    .not("status", "in", "(INTERCAMBIADO,CANCELADO)")
     .order("match_score", { ascending: false })
     .order("distance_km", { ascending: true, nullsFirst: false })
     .order("updated_at", { ascending: false });
@@ -880,29 +882,33 @@ export async function getMyTinderData(firebaseUser: User) {
   if (error) throw new Error(error.message);
 
   const enriched = await enrichMatchesWithReputation(data ?? [], profile.id, album.id);
-  const all = (enriched as any[]).filter((m) => {
-    // Si no hay distancia, no descartamos la tarjeta: se muestra como
-    // “Ubicación por confirmar”. El radio del plan solo filtra distancias reales.
-    if (typeof m.distance_km !== "number") return true;
-    return m.distance_km <= maxRadius;
-  });
 
   const isUser1 = (m: any) => m.user1_id === profile.id;
   const likedByMe = (m: any) => isUser1(m) ? Boolean(m.liked_by_user1) : Boolean(m.liked_by_user2);
   const likedByOther = (m: any) => isUser1(m) ? Boolean(m.liked_by_user2) : Boolean(m.liked_by_user1);
   const rejectedByMe = (m: any) => isUser1(m) ? Boolean(m.rejected_by_user1) : Boolean(m.rejected_by_user2);
 
-  const isTinderCandidate = (m: any) => {
-    const status = String(m.status || "PENDIENTE");
-    // Importante: el modo simple ya mostraba matches que venían de versiones
-    // anteriores con estados distintos de PENDIENTE. Tinder no debe quedarse
-    // vacío por exigir status === "PENDIENTE" de forma estricta; solo excluye
-    // conversaciones, acuerdos, intercambios finalizados o cancelados.
-    return !["HABLANDO", "ACORDADO", "INTERCAMBIADO", "CANCELADO"].includes(status) && !m.mutual_interest;
+  const hasRealExchange = (m: any) => {
+    const iGet = isUser1(m) ? m.figus_user1_gets : m.figus_user2_gets;
+    const iGive = isUser1(m) ? m.figus_user2_gets : m.figus_user1_gets;
+    return Array.isArray(iGet) && Array.isArray(iGive) && iGet.length > 0 && iGet.length === iGive.length;
   };
 
-  const sortTinderCards = (items: any[]) => items.sort((a, b) => {
-    // Si alguien ya me dio like, aparece primero. Después cantidad/score y cercanía.
+  const passesRadius = (m: any) => {
+    // Si no hay distancia válida, no se elimina la propuesta.
+    if (typeof m.distance_km !== "number") return true;
+    return m.distance_km <= maxRadius;
+  };
+
+  const isFinalOrChat = (m: any) => {
+    const status = String(m.status || "PENDIENTE").toUpperCase();
+    return ["HABLANDO", "ACORDADO", "INTERCAMBIADO", "CANCELADO"].includes(status) || Boolean(m.mutual_interest);
+  };
+
+  const base = (enriched as any[]).filter((m) => hasRealExchange(m) && passesRadius(m));
+  const tinderCandidates = base.filter((m) => !isFinalOrChat(m));
+
+  const sortTinderCards = (items: any[]) => [...items].sort((a, b) => {
     const likeDiff = Number(likedByOther(b)) - Number(likedByOther(a));
     if (likeDiff !== 0) return likeDiff;
     const scoreDiff = (b.match_score ?? 0) - (a.match_score ?? 0);
@@ -910,29 +916,35 @@ export async function getMyTinderData(firebaseUser: User) {
     return (a.distance_km ?? 9999) - (b.distance_km ?? 9999);
   });
 
-  const tinderCandidates = all.filter((m) => isTinderCandidate(m));
-
   const incomingLikes = sortTinderCards(
     tinderCandidates.filter((m) => likedByOther(m) && !likedByMe(m) && !rejectedByMe(m))
   );
 
-  // Cola normal: no muestro lo que ya marqué o descarté.
+  // Cola normal: tarjetas frescas reales 1x1.
   const strictQueue = sortTinderCards(
     tinderCandidates.filter((m) => !likedByMe(m) && !rejectedByMe(m))
   );
 
-  // Fallback importante para la app real/testeo: con pocos usuarios, si el usuario
-  // descartó tarjetas en pruebas anteriores, Tinder quedaba vacío aunque el modo
-  // simple siguiera mostrando intercambios reales. Cuando no hay cola fresca,
-  // reofrecemos descartados reales 1x1. Los likes enviados siguen sin repetirse.
-  const fallbackQueue = strictQueue.length > 0
-    ? strictQueue
-    : sortTinderCards(tinderCandidates.filter((m) => !likedByMe(m)));
+  // Fallback 1: si en pruebas se descartaron todas, las reofrecemos.
+  const withRejectedAgain = sortTinderCards(
+    tinderCandidates.filter((m) => !likedByMe(m))
+  );
 
-  const queue = fallbackQueue.slice(0, maxCards);
+  // Fallback 2: si por estados heredados quedó todo fuera, usamos la misma base del modo simple,
+  // pero seguimos excluyendo matches mutuos/finalizados. Esto evita que Tinder quede vacío
+  // mientras “Buscar intercambio” sí muestra resultados.
+  const compatibleNonFinal = sortTinderCards(
+    base.filter((m) => {
+      const status = String(m.status || "PENDIENTE").toUpperCase();
+      return !["INTERCAMBIADO", "CANCELADO"].includes(status) && !Boolean(m.mutual_interest) && !likedByMe(m);
+    })
+  );
 
-  const waitingForOther = all.filter((m) => likedByMe(m) && !likedByOther(m) && !m.mutual_interest).length;
-  const mutual = all.filter((m) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO"].includes(String(m.status || ""))).length;
+  const rawQueue = strictQueue.length > 0 ? strictQueue : (withRejectedAgain.length > 0 ? withRejectedAgain : compatibleNonFinal);
+  const queue = rawQueue.slice(0, Number.isFinite(maxCards) ? maxCards : undefined);
+
+  const waitingForOther = base.filter((m) => likedByMe(m) && !likedByOther(m) && !m.mutual_interest).length;
+  const mutual = base.filter((m) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO"].includes(String(m.status || "").toUpperCase())).length;
 
   return {
     profile,
@@ -948,6 +960,13 @@ export async function getMyTinderData(firebaseUser: User) {
       likesLimit: limits.tinderLikesPerDay,
       undoLimit: limits.undoPerDay,
       seeLikes: limits.seeLikes,
+      debug: {
+        activeMatches: (enriched as any[]).length,
+        realExchangeMatches: base.length,
+        tinderCandidates: tinderCandidates.length,
+        strictQueue: strictQueue.length,
+        fallbackQueue: rawQueue.length,
+      },
     },
   };
 }
