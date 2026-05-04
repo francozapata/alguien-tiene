@@ -871,7 +871,7 @@ export async function getMyTinderData(firebaseUser: User) {
 
   const debug: Record<string, number> = {
     existingRowsBeforeGenerate: 0,
-    generatedFallback: 0,
+    generatedRealtime: 0,
     rowsRead: 0,
     enrichedRows: 0,
     activeRows: 0,
@@ -899,18 +899,18 @@ export async function getMyTinderData(firebaseUser: User) {
     return data ?? [];
   }
 
-  // IMPORTANTE: Tinder no usa una lista aparte ni depende de IDs recién creados.
-  // Lee todos los matches activos reales que ya usa el modo simple.
-  // Si todavía no existen, recién ahí genera como fallback.
-  let rows: any[] = await readTinderRows();
-  debug.existingRowsBeforeGenerate = rows.length;
+  // TINDER DEFINITIVO:
+  // No depende de filas viejas/vacías de figu_matches. Cada vez que entrás al modo
+  // Tinder recalcula la cola desde la fuente real: álbum + repetidas de todos los
+  // usuarios. Luego guarda/actualiza las propuestas para que el swipe tenga ID,
+  // preserve likes/rechazos y pueda abrir chat solo con match mutuo.
+  const existingRows = await readTinderRows();
+  debug.existingRowsBeforeGenerate = existingRows.length;
 
-  if (rows.length === 0) {
-    const generated = await generateMatchesForUser(profile.id, album.id);
-    debug.generatedFallback = generated.length;
-    rows = await readTinderRows();
-  }
+  const generated = await generateMatchesForUser(profile.id, album.id);
+  debug.generatedRealtime = generated.length;
 
+  const rows: any[] = await readTinderRows();
   debug.rowsRead = rows.length;
 
   const enriched = await enrichMatchesWithReputation(rows, profile.id, album.id);
@@ -937,10 +937,10 @@ export async function getMyTinderData(firebaseUser: User) {
     return Number(a.distance_km ?? 9999) - Number(b.distance_km ?? 9999);
   });
 
-  // TINDER REHECHO DE VERDAD:
-  // El modo simple puede ser estricto. Tinder NO debe morir por status, distancia,
-  // pruebas anteriores o por un flag viejo de la fila. Si el match existe y tiene
-  // figuritas para mostrar, se convierte en tarjeta. La distancia solo ordena.
+  // TINDER DEFINITIVO:
+  // Las tarjetas salen de matches recalculados en vivo. El status/distancia no debe
+  // matar una tarjeta; solo ocultamos lo que ya es chat/match mutuo, intercambio cerrado
+  // o lo que el usuario ocultó explícitamente.
   const tinderCandidates = (enriched as any[]).filter((m) => {
     if (hiddenByMe(m)) return false;
     if (isMutualOrChat(m)) return false; // el chat solo nace por match mutuo; no repetir chats como tarjetas.
