@@ -360,7 +360,9 @@ export async function getMyMatches(firebaseUser: User) {
 
   if (error) throw new Error(error.message);
 
-  const matches = await enrichMatchesWithReputation(data ?? [], profile.id, album.id);
+  const matches = (await enrichMatchesWithReputation(data ?? [], profile.id, album.id))
+    .map((match: any) => normalizeMatchFigus(match))
+    .filter((match: any) => (match.figus_user1_gets?.length ?? 0) > 0 && (match.figus_user2_gets?.length ?? 0) > 0 && match.match_type === "DOUBLE");
 
   return { profile, matches };
 }
@@ -910,6 +912,213 @@ export async function expressFiguInterest(firebaseUser: User, matchId: string) {
 
 
 
+async function generateTinderDiscoveryRows(userId: string, albumId: string) {
+  const { data: progressRows, error: progressError } = await supabase
+    .from("user_album_progress")
+    .select("user_id, owned_figus")
+    .eq("album_id", albumId);
+
+  if (progressError) throw new Error(progressError.message);
+
+  const progressByUser = new Map<string, number[]>(
+    (progressRows ?? []).map((row: any) => [row.user_id, normalizeStoredFigus(row.owned_figus)])
+  );
+
+  const myOwned = progressByUser.get(userId) ?? [];
+  if (myOwned.length === 0) return [];
+
+  const { data: repeatedRows, error: repeatedError } = await supabase
+    .from("user_repeated_figus")
+    .select("user_id, figu_number, quantity")
+    .eq("album_id", albumId);
+
+  if (repeatedError) throw new Error(repeatedError.message);
+
+  const repeatedByUser = new Map<string, Set<number>>();
+  for (const row of repeatedRows ?? []) {
+    if (Number(row.quantity ?? 0) <= 0) continue;
+    const parsed = normalizeStoredFigus([row.figu_number]);
+    for (const figu of parsed) {
+      const set = repeatedByUser.get(row.user_id) ?? new Set<number>();
+      set.add(figu);
+      repeatedByUser.set(row.user_id, set);
+    }
+  }
+
+  const candidateUserIds = Array.from(progressByUser.keys()).filter((id) => id !== userId);
+  if (candidateUserIds.length === 0) return [];
+
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, lat, lng, city, neighborhood, plan_type, is_premium, premium_until, boosts_available, instant_searches_available, radar_uses_available, plan_granted_by_admin, plan_notes")
+    .in("id", [...candidateUserIds, userId]);
+
+  if (profilesError) throw new Error(profilesError.message);
+
+  const profileById = new Map<string, any>((profiles ?? []).map((profile: any) => [profile.id, profile]));
+  const myProfile = profileById.get(userId) ?? null;
+  const myRepeated = repeatedByUser.get(userId) ?? new Set<number>();
+  const myNeeded = new Set<number>(calculateNeededFromOwned(myOwned));
+
+  const created = [];
+
+  for (const otherUserId of candidateUserIds) {
+    const otherOwned = progressByUser.get(otherUserId) ?? [];
+    if (otherOwned.length === 0) continue;
+
+    const otherRepeated = repeatedByUser.get(otherUserId) ?? new Set<number>();
+    const otherNeeded = new Set<number>(calculateNeededFromOwned(otherOwned));
+
+    const iCanReceive = Array.from(myNeeded).filter((figu) => otherRepeated.has(figu));
+    const otherCanReceive = Array.from(otherNeeded).filter((figu) => myRepeated.has(figu));
+
+    // Tinder es descubrimiento: alcanza con que exista algo útil para alguno de los dos.
+    if (iCanReceive.length === 0 && otherCanReceive.length === 0) continue;
+
+    const fairCount = Math.min(iCanReceive.length, otherCanReceive.length);
+    const iGet = fairCount > 0 ? iCanReceive.slice(0, fairCount) : iCanReceive;
+    const otherGets = fairCount > 0 ? otherCanReceive.slice(0, fairCount) : otherCanReceive;
+    const exchangeCount = fairCount > 0 ? fairCount : Math.max(iGet.length, otherGets.length);
+
+    const otherProfile = profileById.get(otherUserId) ?? null;
+    const distanceKm = calculateDistanceKm(myProfile, otherProfile);
+    const otherPriority = getPlanLimits(normalizeSubscription(otherProfile)).priorityWeight;
+    const score = calculateScore({ exchangeCount, distanceKm, otherPriority });
+
+    const user1 = userId < otherUserId ? userId : otherUserId;
+    const user2 = userId < otherUserId ? otherUserId : userId;
+    const currentUserIsUser1 = user1 === userId;
+
+    const { data: existingMatch, error: existingMatchError } = await supabase
+      .from("figu_matches")
+      .select("id,status,match_type,liked_by_user1,liked_by_user2,mutual_interest,rejected_by_user1,rejected_by_user2,hidden_by_user1,hidden_by_user2,trade_applied,user1_confirmed_trade,user2_confirmed_trade")
+      .eq("user1_id", user1)
+      .eq("user2_id", user2)
+      .eq("album_id", albumId)
+      .maybeSingle();
+
+    if (existingMatchError) throw new Error(existingMatchError.message);
+
+    const preservedStatus = existingMatch && (existingMatch.mutual_interest || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(existingMatch.status || "").toUpperCase()))
+      ? existingMatch.status
+      : "PENDIENTE";
+
+    const payload = {
+      user1_id: user1,
+      user2_id: user2,
+      album_id: albumId,
+      match_type: fairCount > 0 ? "DOUBLE" : "SIMPLE",
+      figus_user1_gets: currentUserIsUser1 ? iGet : otherGets,
+      figus_user2_gets: currentUserIsUser1 ? otherGets : iGet,
+      city: myProfile?.city ?? otherProfile?.city ?? null,
+      neighborhood: myProfile?.neighborhood ?? otherProfile?.neighborhood ?? null,
+      match_score: score,
+      distance_km: distanceKm,
+      meeting_suggestion: suggestMeetingPlace(myProfile?.city ?? otherProfile?.city ?? null, myProfile?.neighborhood ?? otherProfile?.neighborhood ?? null),
+      status: preservedStatus,
+      is_active: true,
+      liked_by_user1: Boolean(existingMatch?.liked_by_user1),
+      liked_by_user2: Boolean(existingMatch?.liked_by_user2),
+      mutual_interest: Boolean(existingMatch?.mutual_interest),
+      rejected_by_user1: Boolean(existingMatch?.rejected_by_user1),
+      rejected_by_user2: Boolean(existingMatch?.rejected_by_user2),
+      hidden_by_user1: Boolean(existingMatch?.hidden_by_user1),
+      hidden_by_user2: Boolean(existingMatch?.hidden_by_user2),
+      trade_applied: Boolean(existingMatch?.trade_applied),
+      user1_confirmed_trade: Boolean(existingMatch?.user1_confirmed_trade),
+      user2_confirmed_trade: Boolean(existingMatch?.user2_confirmed_trade),
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("figu_matches")
+      .upsert(payload, { onConflict: "user1_id,user2_id,album_id" })
+      .select("*")
+      .single();
+
+    if (error) throw new Error(error.message);
+    if (data) created.push(data);
+  }
+
+  return created;
+}
+
+async function enrichRowsWithRealtimeTinderFigus(rows: any[], currentUserId: string, albumId: string) {
+  if (rows.length === 0) return rows;
+
+  const userIds = Array.from(new Set(rows.flatMap((row: any) => [row.user1_id, row.user2_id]).filter(Boolean)));
+
+  const [{ data: progressRows, error: progressError }, { data: repeatedRows, error: repeatedError }, { data: profilesRows, error: profilesError }] = await Promise.all([
+    supabase.from("user_album_progress").select("user_id, owned_figus").eq("album_id", albumId).in("user_id", userIds),
+    supabase.from("user_repeated_figus").select("user_id, figu_number, quantity").eq("album_id", albumId).in("user_id", userIds),
+    supabase.from("profiles").select("id, lat, lng, city, neighborhood, plan_type, is_premium, premium_until, plan_granted_by_admin").in("id", userIds),
+  ]);
+
+  if (progressError) throw new Error(progressError.message);
+  if (repeatedError) throw new Error(repeatedError.message);
+  if (profilesError) throw new Error(profilesError.message);
+
+  const progressByUser = new Map<string, number[]>(
+    (progressRows ?? []).map((row: any) => [row.user_id, normalizeStoredFigus(row.owned_figus)])
+  );
+
+  const repeatedByUser = new Map<string, Set<number>>();
+  for (const row of repeatedRows ?? []) {
+    if (Number(row.quantity ?? 0) <= 0) continue;
+    const parsed = normalizeStoredFigus([row.figu_number]);
+    for (const figu of parsed) {
+      const set = repeatedByUser.get(row.user_id) ?? new Set<number>();
+      set.add(figu);
+      repeatedByUser.set(row.user_id, set);
+    }
+  }
+
+  const profileById = new Map<string, any>((profilesRows ?? []).map((profile: any) => [profile.id, profile]));
+  const currentProfile = profileById.get(currentUserId) ?? null;
+
+  function intersectFromSet(values: Iterable<number>, available: Set<number>) {
+    return Array.from(values).filter((figu) => available.has(figu));
+  }
+
+  return rows.map((raw: any) => {
+    const row = normalizeMatchFigus(raw);
+    const otherUserId = row.user1_id === currentUserId ? row.user2_id : row.user1_id;
+
+    const myOwned = progressByUser.get(currentUserId) ?? [];
+    const otherOwned = progressByUser.get(otherUserId) ?? [];
+    const myRepeated = repeatedByUser.get(currentUserId) ?? new Set<number>();
+    const otherRepeated = repeatedByUser.get(otherUserId) ?? new Set<number>();
+
+    const myNeeded = new Set<number>(calculateNeededFromOwned(myOwned));
+    const otherNeeded = new Set<number>(calculateNeededFromOwned(otherOwned));
+
+    const iCanReceive = intersectFromSet(myNeeded, otherRepeated);
+    const otherCanReceive = intersectFromSet(otherNeeded, myRepeated);
+    const fairCount = Math.min(iCanReceive.length, otherCanReceive.length);
+
+    // Si hay intercambio justo, Tinder muestra propuesta 1x1.
+    // Si no, igual puede mostrar descubrimiento parcial: alguien tiene algo que sirve.
+    const iGet = fairCount > 0 ? iCanReceive.slice(0, fairCount) : iCanReceive;
+    const otherGets = fairCount > 0 ? otherCanReceive.slice(0, fairCount) : otherCanReceive;
+
+    const currentIsUser1 = row.user1_id === currentUserId;
+    const distanceKm = calculateDistanceKm(currentProfile, profileById.get(otherUserId) ?? null);
+    const exchangeCount = fairCount > 0 ? fairCount : Math.max(iGet.length, otherGets.length, 0);
+
+    return {
+      ...row,
+      match_type: fairCount > 0 ? "DOUBLE" : "SIMPLE",
+      figus_user1_gets: currentIsUser1 ? iGet : otherGets,
+      figus_user2_gets: currentIsUser1 ? otherGets : iGet,
+      match_score: Math.max(Number(row.match_score ?? 0), exchangeCount > 0 ? calculateScore({ exchangeCount, distanceKm }) : 0),
+      distance_km: typeof row.distance_km === "number" ? row.distance_km : distanceKm,
+      _tinderRealtimeKind: fairCount > 0 ? "MATCH" : (iGet.length > 0 || otherGets.length > 0 ? "PARTIAL" : "EMPTY"),
+    };
+  });
+}
+
+
+
 
 export async function getMyTinderData(firebaseUser: User) {
   const profile = await getOrCreateProfile(firebaseUser);
@@ -959,13 +1168,15 @@ export async function getMyTinderData(firebaseUser: User) {
   const existingRows = await readTinderRows();
   debug.existingRowsBeforeGenerate = existingRows.length;
 
-  const generated = await generateMatchesForUser(profile.id, album.id);
+  await generateMatchesForUser(profile.id, album.id);
+  const generated = await generateTinderDiscoveryRows(profile.id, album.id);
   debug.generatedRealtime = generated.length;
 
   const rows: any[] = await readTinderRows();
   debug.rowsRead = rows.length;
 
-  const enriched = (await enrichMatchesWithReputation(rows, profile.id, album.id)).map((row: any) => normalizeMatchFigus(row));
+  const reputationEnriched = (await enrichMatchesWithReputation(rows, profile.id, album.id)).map((row: any) => normalizeMatchFigus(row));
+  const enriched = await enrichRowsWithRealtimeTinderFigus(reputationEnriched, profile.id, album.id);
   debug.enrichedRows = enriched.length;
 
   const isUser1 = (m: any) => m.user1_id === profile.id;
@@ -1005,7 +1216,7 @@ export async function getMyTinderData(firebaseUser: User) {
     // Para tarjetas Tinder alcanza con que la propuesta tenga algo real que mostrar.
     // También aceptamos score > 0 para no bloquear tarjetas si una migración vieja
     // guardó arrays en formato raro; arriba los normalizamos todo lo posible.
-    return myGetsCount > 0 || otherGetsCount > 0 || Number(m.match_score ?? 0) > 0;
+    return myGetsCount > 0 || otherGetsCount > 0 || String(m._tinderRealtimeKind || "") === "PARTIAL" || Number(m.match_score ?? 0) > 0;
   });
 
   debug.activeRows = tinderCandidates.length;
