@@ -937,24 +937,42 @@ export async function getMyTinderData(firebaseUser: User) {
     return Number(a.distance_km ?? 9999) - Number(b.distance_km ?? 9999);
   });
 
-  const active = (enriched as any[]).filter((m) => hasRealExchange(m) && passesRadius(m) && !isMutualOrChat(m));
-  debug.activeRows = active.length;
-  debug.pendingRows = active.filter((m) => String(m.status || "").toUpperCase() === "PENDIENTE").length;
-  debug.hiddenByMe = active.filter(hiddenByMe).length;
-  debug.rejectedByMe = active.filter(rejectedByMe).length;
-  debug.likedByMe = active.filter(likedByMe).length;
+  // TINDER REHECHO DE VERDAD:
+  // El modo simple puede ser estricto. Tinder NO debe morir por status, distancia,
+  // pruebas anteriores o por un flag viejo de la fila. Si el match existe y tiene
+  // figuritas para mostrar, se convierte en tarjeta. La distancia solo ordena.
+  const tinderCandidates = (enriched as any[]).filter((m) => {
+    if (hiddenByMe(m)) return false;
+    if (isMutualOrChat(m)) return false; // el chat solo nace por match mutuo; no repetir chats como tarjetas.
 
-  const notHidden = active.filter((m) => !hiddenByMe(m));
-  const incomingLikes = sortCards(notHidden.filter((m) => likedByOther(m) && !likedByMe(m) && !rejectedByMe(m)));
+    const myGets = isUser1(m) ? m.figus_user1_gets : m.figus_user2_gets;
+    const otherGets = isUser1(m) ? m.figus_user2_gets : m.figus_user1_gets;
+    const myGetsCount = Array.isArray(myGets) ? myGets.length : 0;
+    const otherGetsCount = Array.isArray(otherGets) ? otherGets.length : 0;
+
+    // Para tarjetas Tinder alcanza con que la propuesta tenga algo real que mostrar.
+    // En los matches generados por el modo simple normalmente ambos son > 0.
+    return myGetsCount > 0 || otherGetsCount > 0 || Number(m.match_score ?? 0) > 0;
+  });
+
+  debug.activeRows = tinderCandidates.length;
+  debug.pendingRows = tinderCandidates.filter((m) => String(m.status || "").toUpperCase() === "PENDIENTE").length;
+  debug.hiddenByMe = (enriched as any[]).filter(hiddenByMe).length;
+  debug.rejectedByMe = tinderCandidates.filter(rejectedByMe).length;
+  debug.likedByMe = tinderCandidates.filter(likedByMe).length;
+
+  const incomingLikes = sortCards(tinderCandidates.filter((m) => likedByOther(m) && !likedByMe(m) && !rejectedByMe(m)));
   debug.incomingLikes = incomingLikes.length;
 
   // Esencia Tinder:
-  // - tarjetas pendientes primero;
-  // - si ya descartaste todo en pruebas, no queda ciego: vuelve a mostrar descartadas como fallback;
-  // - si ya diste like, no la vuelve a mostrar salvo que sea incoming like.
-  const freshQueue = notHidden.filter((m) => !likedByMe(m) && !rejectedByMe(m));
-  const rejectedFallback = notHidden.filter((m) => !likedByMe(m));
-  const rawQueue = sortCards(freshQueue.length > 0 ? freshQueue : rejectedFallback);
+  // 1) primero usuarios que te dieron like;
+  // 2) después tarjetas nuevas;
+  // 3) si en testing descartaste todo, vuelve a mostrar descartadas como fallback;
+  // 4) si ya diste like y el otro no respondió, no la repite como tarjeta principal.
+  const freshQueue = tinderCandidates.filter((m) => !likedByMe(m) && !rejectedByMe(m));
+  const rejectedFallback = tinderCandidates.filter((m) => !likedByMe(m));
+  const baseQueue = incomingLikes.length > 0 ? incomingLikes : (freshQueue.length > 0 ? freshQueue : rejectedFallback);
+  const rawQueue = sortCards(baseQueue);
   debug.usableCards = rawQueue.length;
 
   const queue = rawQueue.slice(0, Number.isFinite(maxCards) ? maxCards : undefined);
