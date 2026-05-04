@@ -22,6 +22,58 @@ export function parseFiguCounts(value: string): Record<number, number> {
   return parseStickerCounts(value);
 }
 
+
+function normalizeStoredFigus(value: unknown): number[] {
+  // Supabase debería devolver number[], pero en despliegues viejos o migraciones
+  // puede llegar como string ("{1,2}", "[1,2]", "FWC0,FWC1") o mezclado.
+  // Tinder usa esta normalización para no quedarse sin tarjetas por formato.
+  if (Array.isArray(value)) {
+    const parsed: number[] = [];
+    for (const item of value) {
+      if (typeof item === "number") parsed.push(item);
+      else if (typeof item === "string") parsed.push(...parseStickerInput(item));
+      else if (item !== null && item !== undefined) parsed.push(Number(item));
+    }
+    return serializeFigus(parsed);
+  }
+
+  if (typeof value === "string") {
+    const clean = value.trim();
+    if (!clean || clean === "{}" || clean === "[]") return [];
+
+    try {
+      const json = JSON.parse(clean);
+      if (Array.isArray(json)) return normalizeStoredFigus(json);
+    } catch {
+      // Puede ser literal PostgreSQL: {1,2,3} o texto: FWC0, FWC1
+    }
+
+    const withoutBraces = clean.replace(/^\{/, "").replace(/\}$/, "");
+    const tokens = withoutBraces
+      .split(/[\s,;|/\\]+/)
+      .map((token) => token.replace(/^"|"$/g, "").trim())
+      .filter(Boolean);
+
+    const parsed: number[] = [];
+    for (const token of tokens) {
+      const fromCatalog = parseStickerInput(token);
+      if (fromCatalog.length > 0) parsed.push(...fromCatalog);
+      else parsed.push(Number(token));
+    }
+    return serializeFigus(parsed);
+  }
+
+  return [];
+}
+
+function normalizeMatchFigus<T extends Record<string, any>>(match: T): T {
+  return {
+    ...match,
+    figus_user1_gets: normalizeStoredFigus(match.figus_user1_gets),
+    figus_user2_gets: normalizeStoredFigus(match.figus_user2_gets),
+  };
+}
+
 function normalizeZone(value?: string | null) {
   return value?.trim() || null;
 }
@@ -896,7 +948,7 @@ export async function getMyTinderData(firebaseUser: User) {
       .order("updated_at", { ascending: false });
 
     if (error) throw new Error(error.message);
-    return data ?? [];
+    return (data ?? []).map((row: any) => normalizeMatchFigus(row));
   }
 
   // TINDER DEFINITIVO:
@@ -913,7 +965,7 @@ export async function getMyTinderData(firebaseUser: User) {
   const rows: any[] = await readTinderRows();
   debug.rowsRead = rows.length;
 
-  const enriched = await enrichMatchesWithReputation(rows, profile.id, album.id);
+  const enriched = (await enrichMatchesWithReputation(rows, profile.id, album.id)).map((row: any) => normalizeMatchFigus(row));
   debug.enrichedRows = enriched.length;
 
   const isUser1 = (m: any) => m.user1_id === profile.id;
@@ -921,7 +973,7 @@ export async function getMyTinderData(firebaseUser: User) {
   const likedByOther = (m: any) => isUser1(m) ? Boolean(m.liked_by_user2) : Boolean(m.liked_by_user1);
   const rejectedByMe = (m: any) => isUser1(m) ? Boolean(m.rejected_by_user1) : Boolean(m.rejected_by_user2);
   const hiddenByMe = (m: any) => isUser1(m) ? Boolean(m.hidden_by_user1) : Boolean(m.hidden_by_user2);
-  const isMutualOrChat = (m: any) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO", "INTERCAMBIADO", "CANCELADO"].includes(String(m.status || "").toUpperCase());
+  const isMutualOrChat = (m: any) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(m.status || "").toUpperCase());
   const passesRadius = (m: any) => typeof m.distance_km !== "number" || m.distance_km <= maxRadius;
   const hasRealExchange = (m: any) => {
     const iGet = isUser1(m) ? m.figus_user1_gets : m.figus_user2_gets;
@@ -951,7 +1003,8 @@ export async function getMyTinderData(firebaseUser: User) {
     const otherGetsCount = Array.isArray(otherGets) ? otherGets.length : 0;
 
     // Para tarjetas Tinder alcanza con que la propuesta tenga algo real que mostrar.
-    // En los matches generados por el modo simple normalmente ambos son > 0.
+    // También aceptamos score > 0 para no bloquear tarjetas si una migración vieja
+    // guardó arrays en formato raro; arriba los normalizamos todo lo posible.
     return myGetsCount > 0 || otherGetsCount > 0 || Number(m.match_score ?? 0) > 0;
   });
 

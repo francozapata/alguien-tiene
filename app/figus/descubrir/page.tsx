@@ -46,7 +46,7 @@ export default function DescubrirIntercambiosPage() {
       setStats(data.stats);
       setIndex(0);
       setDiscarded([]);
-      setStatus(data.queue.length ? "Modo Tinder: mazo de figuritas armado desde tu álbum, tus repetidas y otros usuarios compatibles." : "No hay tarjetas Tinder por ahora. Revisá que tu álbum y repetidas estén cargados, y que existan usuarios compatibles.");
+      setStatus(data.queue.length ? "Modo Tinder: mazo de figuritas armado desde tu álbum, tus repetidas y otros usuarios compatibles." : "No hay tarjetas Tinder por ahora. Revisá que tu álbum y repetidas estén cargados, y que existan usuarios con figuritas para descubrir.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "No se pudo cargar.");
     }
@@ -207,7 +207,7 @@ export default function DescubrirIntercambiosPage() {
           <h2 className="text-3xl font-black text-[#0D1B2A]">No hay más propuestas por ahora</h2>
           <p className="mt-2 text-sm font-semibold text-slate-500">{status}</p>
           <p className="mx-auto mt-2 max-w-xl text-xs font-bold leading-5 text-slate-400">
-            El modo Tinder lee los matches activos reales y los muestra como tarjetas. El modo simple queda separado.
+            El modo Tinder recalcula tarjetas desde álbum y repetidas. El modo simple queda separado.
           </p>
           {stats?.debug ? (
             <details className="mx-auto mt-4 max-w-xl rounded-2xl bg-slate-50 p-4 text-left text-xs font-bold text-slate-500 ring-1 ring-slate-200">
