@@ -450,7 +450,7 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
       .eq("album_id", albumId)
       .maybeSingle();
 
-    const preservedStatus = existingMatch?.mutual_interest || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(existingMatch?.status || ""))
+    const preservedStatus = existingMatch && (existingMatch.mutual_interest || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(existingMatch.status || "")))
       ? existingMatch.status
       : "PENDIENTE";
 
