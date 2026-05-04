@@ -6,8 +6,11 @@ import { formatStickerList, parseStickerCounts, parseStickerInput, STICKER_CATAL
 import { ensureDailyBenefits, getPlanLimits, normalizeSubscription } from "@/services/subscriptions";
 
 export function serializeFigus(figus: number[]) {
-  return Array.from(new Set(figus))
-    .filter((n) => Number.isInteger(n) && n >= 1 && n <= TOTAL_FIGUS_MUNDIAL)
+  // Internamente guardamos ordinales del catálogo, pero la UI muestra códigos FIFA/Panini.
+  // Validamos contra STICKER_CATALOG para no depender de numeración corrida histórica.
+  const validOrdinals = new Set(STICKER_CATALOG.map((sticker) => sticker.ordinal));
+  return Array.from(new Set((figus ?? []).map(Number)))
+    .filter((n) => Number.isInteger(n) && validOrdinals.has(n))
     .sort((a, b) => a - b);
 }
 
@@ -218,7 +221,7 @@ export async function saveRepeatedFigus(firebaseUser: User, repeated: Record<num
 
   const rows = Object.entries(repeated)
     .map(([figu, quantity]) => ({ user_id: profile.id, album_id: album.id, figu_number: Number(figu), quantity: Math.max(1, Number(quantity)), updated_at: new Date().toISOString() }))
-    .filter((row) => row.figu_number >= 1 && row.figu_number <= TOTAL_FIGUS_MUNDIAL && row.quantity > 0);
+    .filter((row) => serializeFigus([row.figu_number]).length === 1 && row.quantity > 0);
 
   if (rows.length > 0) {
     const { error } = await supabase.from("user_repeated_figus").insert(rows);
@@ -317,10 +320,12 @@ export async function refreshMyFiguMatches(firebaseUser: User) {
 }
 
 function selectFairExchange(currentUserGets: number[], otherUserGets: number[]) {
-  const max = Math.min(currentUserGets.length, otherUserGets.length);
+  const cleanCurrent = serializeFigus(currentUserGets);
+  const cleanOther = serializeFigus(otherUserGets);
+  const max = Math.min(cleanCurrent.length, cleanOther.length);
   return {
-    currentUserGets: serializeFigus(currentUserGets).slice(0, max),
-    otherUserGets: serializeFigus(otherUserGets).slice(0, max),
+    currentUserGets: cleanCurrent.slice(0, max),
+    otherUserGets: cleanOther.slice(0, max),
     count: max,
   };
 }
@@ -413,8 +418,8 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
     const otherProfile = profileById.get(otherUserId) ?? null;
     const distanceKm = calculateDistanceKm(myProfile, otherProfile);
 
-    // Usamos ubicación real. Si falta en alguno, no mostramos match para no crear cruces falsos.
-    if (distanceKm === null) continue;
+    // La ubicación mejora el orden, pero NO debe matar el match.
+    // Si falta en alguno, igual mostramos el intercambio como “Ubicación por confirmar”.
 
     const otherOwned = progressByUser.get(otherUserId) ?? [];
     const otherRepeatedSet = repeatedByUser.get(otherUserId) ?? new Set<number>();
@@ -868,8 +873,10 @@ export async function getMyTinderData(firebaseUser: User) {
 
   const enriched = await enrichMatchesWithReputation(data ?? [], profile.id, album.id);
   const all = (enriched as any[]).filter((m) => {
-    const distance = m.distance_km ?? Number.POSITIVE_INFINITY;
-    return distance <= maxRadius;
+    // Si no hay distancia, no descartamos la tarjeta: se muestra como
+    // “Ubicación por confirmar”. El radio del plan solo filtra distancias reales.
+    if (typeof m.distance_km !== "number") return true;
+    return m.distance_km <= maxRadius;
   });
 
   const isUser1 = (m: any) => m.user1_id === profile.id;

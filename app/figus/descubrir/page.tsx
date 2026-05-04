@@ -47,7 +47,7 @@ export default function DescubrirIntercambiosPage() {
       setStats(data.stats);
       setIndex(0);
       setDiscarded([]);
-      setStatus(data.queue.length ? "Modo Tinder: propuestas reales 1x1 ordenadas por likes recibidos, cantidad y cercanía." : "No hay propuestas reales 1x1 dentro del radio de tu plan.");
+      setStatus(data.queue.length ? "Modo Tinder: propuestas reales 1x1 ordenadas por likes recibidos, cantidad y cercanía." : "No hay propuestas reales 1x1 por ahora. Revisá que haya usuarios con álbum y repetidas compatibles.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "No se pudo cargar.");
     }

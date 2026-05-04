@@ -75,12 +75,14 @@ export default function CaminoGuiadoUsuariosPage() {
         const amUser1 = m.user1_id === data.profile.id;
         if (amUser1 && m.rejected_by_user1) return false;
         if (!amUser1 && m.rejected_by_user2) return false;
-        const distance = m.distance_km ?? Number.POSITIVE_INFINITY;
-        return distance <= effectiveRadius;
+        // Si no hay distancia todavía, igual mostramos el match real.
+        // El radio solo filtra cuando hay distance_km numérica.
+        if (typeof m.distance_km !== "number") return true;
+        return m.distance_km <= effectiveRadius;
       });
       const limitedMatches = allowedResults === "Ilimitado" ? filteredMatches : filteredMatches.slice(0, allowedResults);
       setMatches(limitedMatches);
-      setStatus(limitedMatches.length ? "Modo simple: combinaciones reales 1x1 cargadas." : "No hay combinaciones reales 1x1 dentro del radio de tu plan.");
+      setStatus(limitedMatches.length ? "Modo simple: combinaciones reales 1x1 cargadas." : "No hay combinaciones reales 1x1 por ahora. Revisá que vos y otros usuarios tengan álbum y repetidas cargadas.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "No se pudo cargar.");
     }
