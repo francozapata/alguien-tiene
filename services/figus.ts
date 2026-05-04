@@ -892,12 +892,21 @@ export async function getMyTinderData(firebaseUser: User) {
   const likedByOther = (m: any) => isUser1(m) ? Boolean(m.liked_by_user2) : Boolean(m.liked_by_user1);
   const rejectedByMe = (m: any) => isUser1(m) ? Boolean(m.rejected_by_user1) : Boolean(m.rejected_by_user2);
 
+  const isTinderCandidate = (m: any) => {
+    const status = String(m.status || "PENDIENTE");
+    // Importante: el modo simple ya mostraba matches que venían de versiones
+    // anteriores con estados distintos de PENDIENTE. Tinder no debe quedarse
+    // vacío por exigir status === "PENDIENTE" de forma estricta; solo excluye
+    // conversaciones, acuerdos, intercambios finalizados o cancelados.
+    return !["HABLANDO", "ACORDADO", "INTERCAMBIADO", "CANCELADO"].includes(status) && !m.mutual_interest;
+  };
+
   const incomingLikes = all
-    .filter((m) => String(m.status || "PENDIENTE") === "PENDIENTE" && likedByOther(m) && !likedByMe(m) && !rejectedByMe(m) && !m.mutual_interest)
+    .filter((m) => isTinderCandidate(m) && likedByOther(m) && !likedByMe(m) && !rejectedByMe(m))
     .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
 
   const queue = all
-    .filter((m) => String(m.status || "PENDIENTE") === "PENDIENTE" && !likedByMe(m) && !rejectedByMe(m) && !m.mutual_interest)
+    .filter((m) => isTinderCandidate(m) && !likedByMe(m) && !rejectedByMe(m))
     .sort((a, b) => {
       // Si alguien ya me dio like, aparece primero. Después cantidad/score y cercanía.
       const likeDiff = Number(likedByOther(b)) - Number(likedByOther(a));
