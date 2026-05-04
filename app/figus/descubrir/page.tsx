@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { refreshSmartLocation, syncStoredLocation } from "@/utils/location";
 import PermissionsPanel from "@/components/figus/PermissionsPanel";
-import RequiredLocationGate from "@/components/figus/RequiredLocationGate";
 import { FiguShell } from "@/components/figus/FiguShell";
 import { expressFiguInterest, getMyTinderData, rejectFiguMatch, undoLastTinderAction } from "@/services/figus";
 import { FiguMatch } from "@/types/figus";
@@ -184,7 +183,7 @@ export default function DescubrirIntercambiosPage() {
   if (!current) {
     return (
       <FiguShell>
-        <RequiredLocationGate>
+        <>
         {likesPanel}
         {stats?.seeLikes && incomingLikes.length ? (
           <section className="mb-5 rounded-[2rem] bg-white p-5 shadow-sm ring-1 ring-emerald-200">
@@ -208,15 +207,21 @@ export default function DescubrirIntercambiosPage() {
           <h2 className="text-3xl font-black text-[#0D1B2A]">No hay más propuestas por ahora</h2>
           <p className="mt-2 text-sm font-semibold text-slate-500">{status}</p>
           <p className="mx-auto mt-2 max-w-xl text-xs font-bold leading-5 text-slate-400">
-            El modo Tinder ahora arma su propio mazo de tarjetas desde álbum + repetidas. El modo simple queda separado.
+            El modo Tinder lee los matches activos reales y los muestra como tarjetas. El modo simple queda separado.
           </p>
+          {stats?.debug ? (
+            <details className="mx-auto mt-4 max-w-xl rounded-2xl bg-slate-50 p-4 text-left text-xs font-bold text-slate-500 ring-1 ring-slate-200">
+              <summary className="cursor-pointer text-slate-700">Diagnóstico Tinder</summary>
+              <pre className="mt-3 whitespace-pre-wrap">{JSON.stringify(stats.debug, null, 2)}</pre>
+            </details>
+          ) : null}
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <button onClick={() => load()} className="rounded-2xl bg-[#0D1B2A] px-5 py-3 text-sm font-black text-white">Revisar de nuevo</button>
             <Link href="/figus/guiado" className="rounded-2xl bg-[#22C55E] px-5 py-3 text-sm font-black text-white">Ver modo simple</Link>
             <Link href="/figus/mi-album" className="rounded-2xl bg-[#2563EB] px-5 py-3 text-sm font-black text-white">Ajustar álbum</Link>
           </div>
         </section>
-        </RequiredLocationGate>
+        </>
     </FiguShell>
     );
   }
@@ -233,7 +238,7 @@ export default function DescubrirIntercambiosPage() {
 
   return (
     <FiguShell>
-      <RequiredLocationGate>
+      <>
       <PermissionsPanel />
       <div className="mb-5 flex items-center justify-between">
         <Link href="/figus/mi-album" className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200">← Mi álbum</Link>
@@ -290,7 +295,7 @@ export default function DescubrirIntercambiosPage() {
 
         <p className="mt-4 text-center text-sm font-semibold text-slate-500">{visible.length} propuestas · {saved.length} guardadas · {interestStatus || status}</p>
       </section>
-      </RequiredLocationGate>
+      </>
     </FiguShell>
   );
 }

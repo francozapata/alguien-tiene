@@ -812,16 +812,19 @@ export async function expressFiguInterest(firebaseUser: User, matchId: string) {
 
   const amUser1 = match.user1_id === profile.id;
 
-  if ((amUser1 && match.rejected_by_user1) || (!amUser1 && match.rejected_by_user2)) {
-    throw new Error("Ya descartaste esta propuesta.");
-  }
-
   const updatePayload: Record<string, unknown> = {
     updated_at: new Date().toISOString(),
   };
 
-  if (amUser1) updatePayload.liked_by_user1 = true;
-  else updatePayload.liked_by_user2 = true;
+  // Si la tarjeta vuelve por fallback después de pruebas, permitir cambiar de opinión.
+  // Marcar “me interesa” limpia el descarte propio.
+  if (amUser1) {
+    updatePayload.liked_by_user1 = true;
+    updatePayload.rejected_by_user1 = false;
+  } else {
+    updatePayload.liked_by_user2 = true;
+    updatePayload.rejected_by_user2 = false;
+  }
 
   const likedByUser1 = amUser1 ? true : Boolean(match.liked_by_user1);
   const likedByUser2 = amUser1 ? Boolean(match.liked_by_user2) : true;
@@ -866,154 +869,65 @@ export async function getMyTinderData(firebaseUser: User) {
   const maxCards = limits.tinderCardsPerDay === "Ilimitado" ? Number.POSITIVE_INFINITY : Number(limits.tinderCardsPerDay ?? 0);
   const maxRadius = limits.radiusKm === "Ilimitado" ? Number.POSITIVE_INFINITY : Number(limits.radiusKm ?? 0);
 
-  // Tinder rehecho desde cero: arma su propio mazo desde álbum + repetidas.
-  // No depende del listado del modo normal. El modo normal no se modifica.
-  const [{ data: progressRows, error: progressError }, { data: repeatedRows, error: repeatedError }, { data: profileRows, error: profilesError }] = await Promise.all([
-    supabase.from("user_album_progress").select("user_id, owned_figus").eq("album_id", album.id),
-    supabase.from("user_repeated_figus").select("user_id, figu_number, quantity").eq("album_id", album.id),
-    supabase.from("profiles").select("id, display_name, avatar_url, email, city, neighborhood, lat, lng, plan_type, is_premium, premium_until, boosts_available, instant_searches_available, radar_uses_available, plan_granted_by_admin, plan_notes"),
-  ] as any);
-
-  if (progressError) throw new Error(progressError.message);
-  if (repeatedError) throw new Error(repeatedError.message);
-  if (profilesError) throw new Error(profilesError.message);
-
-  const progressByUser = new Map<string, number[]>((progressRows ?? []).map((row: any) => [row.user_id, serializeFigus(row.owned_figus ?? [])]));
-  const profileById = new Map<string, any>((profileRows ?? []).map((row: any) => [row.id, row]));
-  const repeatedByUser = new Map<string, Set<number>>();
-
-  for (const row of repeatedRows ?? []) {
-    if (Number(row.quantity ?? 0) <= 0) continue;
-    const figu = Number(row.figu_number);
-    if (!Number.isInteger(figu)) continue;
-    const set = repeatedByUser.get(row.user_id) ?? new Set<number>();
-    set.add(figu);
-    repeatedByUser.set(row.user_id, set);
-  }
-
-  const myOwned = progressByUser.get(profile.id) ?? [];
-  const myRepeated = repeatedByUser.get(profile.id) ?? new Set<number>();
-  const myNeeded = new Set<number>(calculateNeededFromOwned(myOwned));
-  const myProfile = profileById.get(profile.id) ?? effectiveProfile;
-  const now = new Date().toISOString();
-  const upsertedIds: string[] = [];
-  const buildDebug: Record<string, number> = {
-    profiles: profileRows?.length ?? 0,
-    progressRows: progressRows?.length ?? 0,
-    repeatedRows: repeatedRows?.length ?? 0,
-    myOwned: myOwned.length,
-    myRepeated: myRepeated.size,
-    candidatesChecked: 0,
-    candidatesWithRepeated: 0,
-    fairCandidates: 0,
-    upserted: 0,
+  const debug: Record<string, number> = {
+    existingRowsBeforeGenerate: 0,
+    generatedFallback: 0,
+    rowsRead: 0,
+    enrichedRows: 0,
+    activeRows: 0,
+    pendingRows: 0,
+    hiddenByMe: 0,
+    rejectedByMe: 0,
+    likedByMe: 0,
+    incomingLikes: 0,
+    usableCards: 0,
+    finalQueue: 0,
   };
 
-  if (myOwned.length > 0 && myRepeated.size > 0) {
-    for (const otherUserId of Array.from(progressByUser.keys())) {
-      if (otherUserId === profile.id) continue;
-      buildDebug.candidatesChecked += 1;
-
-      const otherOwned = progressByUser.get(otherUserId) ?? [];
-      const otherRepeated = repeatedByUser.get(otherUserId) ?? new Set<number>();
-      if (otherOwned.length === 0 || otherRepeated.size === 0) continue;
-      buildDebug.candidatesWithRepeated += 1;
-
-      const otherNeeded = new Set<number>(calculateNeededFromOwned(otherOwned));
-      const rawMeGets = Array.from(myNeeded).filter((figu) => otherRepeated.has(figu));
-      const rawOtherGets = Array.from(otherNeeded).filter((figu) => myRepeated.has(figu));
-      const fair = selectFairExchange(rawMeGets, rawOtherGets);
-      if (fair.count <= 0) continue;
-      buildDebug.fairCandidates += 1;
-
-      const otherProfile = profileById.get(otherUserId) ?? null;
-      const distanceKm = calculateDistanceKm(myProfile, otherProfile);
-      const user1 = profile.id < otherUserId ? profile.id : otherUserId;
-      const user2 = profile.id < otherUserId ? otherUserId : profile.id;
-      const currentUserIsUser1 = user1 === profile.id;
-
-      const { data: existingMatch, error: existingMatchError } = await supabase
-        .from("figu_matches")
-        .select("id,status,liked_by_user1,liked_by_user2,mutual_interest,rejected_by_user1,rejected_by_user2,hidden_by_user1,hidden_by_user2,trade_applied,user1_confirmed_trade,user2_confirmed_trade")
-        .eq("user1_id", user1)
-        .eq("user2_id", user2)
-        .eq("album_id", album.id)
-        .maybeSingle();
-
-      if (existingMatchError) throw new Error(existingMatchError.message);
-
-      const preservedStatus = existingMatch && (existingMatch.mutual_interest || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(existingMatch.status || "")))
-        ? existingMatch.status
-        : "PENDIENTE";
-
-      const city = myProfile?.city ?? otherProfile?.city ?? null;
-      const neighborhood = myProfile?.neighborhood ?? otherProfile?.neighborhood ?? null;
-      const otherSubscription = normalizeSubscription(otherProfile);
-      const otherPriority = getPlanLimits(otherSubscription).priorityWeight;
-      const score = calculateScore({ exchangeCount: fair.count, distanceKm, otherPriority });
-
-      const payload = {
-        user1_id: user1,
-        user2_id: user2,
-        album_id: album.id,
-        match_type: "DOUBLE",
-        figus_user1_gets: currentUserIsUser1 ? fair.currentUserGets : fair.otherUserGets,
-        figus_user2_gets: currentUserIsUser1 ? fair.otherUserGets : fair.currentUserGets,
-        city,
-        neighborhood,
-        match_score: score,
-        distance_km: distanceKm,
-        meeting_suggestion: suggestMeetingPlace(city, neighborhood),
-        status: preservedStatus,
-        is_active: true,
-        liked_by_user1: Boolean(existingMatch?.liked_by_user1),
-        liked_by_user2: Boolean(existingMatch?.liked_by_user2),
-        mutual_interest: Boolean(existingMatch?.mutual_interest),
-        rejected_by_user1: Boolean(existingMatch?.rejected_by_user1),
-        rejected_by_user2: Boolean(existingMatch?.rejected_by_user2),
-        hidden_by_user1: Boolean(existingMatch?.hidden_by_user1),
-        hidden_by_user2: Boolean(existingMatch?.hidden_by_user2),
-        trade_applied: Boolean(existingMatch?.trade_applied),
-        user1_confirmed_trade: Boolean(existingMatch?.user1_confirmed_trade),
-        user2_confirmed_trade: Boolean(existingMatch?.user2_confirmed_trade),
-        updated_at: now,
-      };
-
-      const { data: saved, error: saveError } = await supabase
-        .from("figu_matches")
-        .upsert(payload, { onConflict: "user1_id,user2_id,album_id" })
-        .select("id")
-        .single();
-
-      if (saveError) throw new Error(`No se pudo armar la tarjeta Tinder. ${saveError.message}`);
-      if (saved?.id) upsertedIds.push(saved.id);
-      buildDebug.upserted += 1;
-    }
-  }
-
-  let rows: any[] = [];
-  if (upsertedIds.length > 0) {
+  async function readTinderRows() {
     const { data, error } = await supabase
       .from("figu_matches")
       .select(`*, user1:profiles!figu_matches_user1_id_fkey(display_name, avatar_url, email), user2:profiles!figu_matches_user2_id_fkey(display_name, avatar_url, email)`)
       .eq("album_id", album.id)
       .eq("is_active", true)
-      .in("id", upsertedIds)
+      .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
       .order("match_score", { ascending: false })
       .order("distance_km", { ascending: true, nullsFirst: false })
       .order("updated_at", { ascending: false });
 
     if (error) throw new Error(error.message);
-    rows = data ?? [];
+    return data ?? [];
   }
 
+  // IMPORTANTE: Tinder no usa una lista aparte ni depende de IDs recién creados.
+  // Lee todos los matches activos reales que ya usa el modo simple.
+  // Si todavía no existen, recién ahí genera como fallback.
+  let rows: any[] = await readTinderRows();
+  debug.existingRowsBeforeGenerate = rows.length;
+
+  if (rows.length === 0) {
+    const generated = await generateMatchesForUser(profile.id, album.id);
+    debug.generatedFallback = generated.length;
+    rows = await readTinderRows();
+  }
+
+  debug.rowsRead = rows.length;
+
   const enriched = await enrichMatchesWithReputation(rows, profile.id, album.id);
+  debug.enrichedRows = enriched.length;
+
   const isUser1 = (m: any) => m.user1_id === profile.id;
   const likedByMe = (m: any) => isUser1(m) ? Boolean(m.liked_by_user1) : Boolean(m.liked_by_user2);
   const likedByOther = (m: any) => isUser1(m) ? Boolean(m.liked_by_user2) : Boolean(m.liked_by_user1);
   const rejectedByMe = (m: any) => isUser1(m) ? Boolean(m.rejected_by_user1) : Boolean(m.rejected_by_user2);
+  const hiddenByMe = (m: any) => isUser1(m) ? Boolean(m.hidden_by_user1) : Boolean(m.hidden_by_user2);
   const isMutualOrChat = (m: any) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO", "INTERCAMBIADO", "CANCELADO"].includes(String(m.status || "").toUpperCase());
   const passesRadius = (m: any) => typeof m.distance_km !== "number" || m.distance_km <= maxRadius;
+  const hasRealExchange = (m: any) => {
+    const iGet = isUser1(m) ? m.figus_user1_gets : m.figus_user2_gets;
+    const otherGets = isUser1(m) ? m.figus_user2_gets : m.figus_user1_gets;
+    return (iGet?.length ?? 0) > 0 && (otherGets?.length ?? 0) > 0;
+  };
 
   const sortCards = (items: any[]) => [...items].sort((a, b) => {
     const otherLikeDiff = Number(likedByOther(b)) - Number(likedByOther(a));
@@ -1023,12 +937,28 @@ export async function getMyTinderData(firebaseUser: User) {
     return Number(a.distance_km ?? 9999) - Number(b.distance_km ?? 9999);
   });
 
-  const usable = sortCards((enriched as any[]).filter((m) => passesRadius(m) && !isMutualOrChat(m)));
-  const incomingLikes = sortCards(usable.filter((m) => likedByOther(m) && !likedByMe(m) && !rejectedByMe(m)));
-  const freshQueue = usable.filter((m) => !likedByMe(m) && !rejectedByMe(m));
-  const rejectedFallback = usable.filter((m) => !likedByMe(m));
-  const rawQueue = freshQueue.length > 0 ? freshQueue : rejectedFallback;
+  const active = (enriched as any[]).filter((m) => hasRealExchange(m) && passesRadius(m) && !isMutualOrChat(m));
+  debug.activeRows = active.length;
+  debug.pendingRows = active.filter((m) => String(m.status || "").toUpperCase() === "PENDIENTE").length;
+  debug.hiddenByMe = active.filter(hiddenByMe).length;
+  debug.rejectedByMe = active.filter(rejectedByMe).length;
+  debug.likedByMe = active.filter(likedByMe).length;
+
+  const notHidden = active.filter((m) => !hiddenByMe(m));
+  const incomingLikes = sortCards(notHidden.filter((m) => likedByOther(m) && !likedByMe(m) && !rejectedByMe(m)));
+  debug.incomingLikes = incomingLikes.length;
+
+  // Esencia Tinder:
+  // - tarjetas pendientes primero;
+  // - si ya descartaste todo en pruebas, no queda ciego: vuelve a mostrar descartadas como fallback;
+  // - si ya diste like, no la vuelve a mostrar salvo que sea incoming like.
+  const freshQueue = notHidden.filter((m) => !likedByMe(m) && !rejectedByMe(m));
+  const rejectedFallback = notHidden.filter((m) => !likedByMe(m));
+  const rawQueue = sortCards(freshQueue.length > 0 ? freshQueue : rejectedFallback);
+  debug.usableCards = rawQueue.length;
+
   const queue = rawQueue.slice(0, Number.isFinite(maxCards) ? maxCards : undefined);
+  debug.finalQueue = queue.length;
 
   const waitingForOther = (enriched as any[]).filter((m) => likedByMe(m) && !likedByOther(m) && !m.mutual_interest).length;
   const mutual = (enriched as any[]).filter((m) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO"].includes(String(m.status || "").toUpperCase())).length;
@@ -1047,14 +977,7 @@ export async function getMyTinderData(firebaseUser: User) {
       likesLimit: limits.tinderLikesPerDay,
       undoLimit: limits.undoPerDay,
       seeLikes: limits.seeLikes,
-      debug: {
-        ...buildDebug,
-        savedRowsRead: rows.length,
-        usableCards: usable.length,
-        freshQueue: freshQueue.length,
-        fallbackQueue: rejectedFallback.length,
-        finalQueue: queue.length,
-      },
+      debug,
     },
   };
 }
