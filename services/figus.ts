@@ -1205,7 +1205,7 @@ export async function getMyTinderData(firebaseUser: User) {
   // Las tarjetas salen de matches recalculados en vivo. El status/distancia no debe
   // matar una tarjeta; solo ocultamos lo que ya es chat/match mutuo, intercambio cerrado
   // o lo que el usuario ocultó explícitamente.
-  const tinderCandidates = (enriched as any[]).filter((m) => {
+  let tinderCandidates = (enriched as any[]).filter((m) => {
     if (hiddenByMe(m)) return false;
     if (isClosedTrade(m)) return false;
     // No filtramos status HABLANDO/ACORDADO: el modo simple puede abrir contacto
@@ -1222,6 +1222,14 @@ export async function getMyTinderData(firebaseUser: User) {
     // guardó arrays en formato raro; arriba los normalizamos todo lo posible.
     return myGetsCount > 0 || otherGetsCount > 0 || String(m._tinderRealtimeKind || "") === "PARTIAL" || Number(m.match_score ?? 0) > 0;
   });
+
+  // Fallback definitivo de Tinder:
+  // Si el recálculo encontró candidatos (enrichedRows > 0) pero el filtro quedó en 0
+  // por datos viejos/incompletos de arrays o estados heredados, igual armamos tarjetas.
+  // Tinder es descubrimiento: no debe quedar vacío si existe otro usuario candidato.
+  if (tinderCandidates.length === 0 && (enriched as any[]).length > 0) {
+    tinderCandidates = (enriched as any[]).filter((m) => !isClosedTrade(m));
+  }
 
   debug.activeRows = tinderCandidates.length;
   debug.pendingRows = tinderCandidates.filter((m) => String(m.status || "").toUpperCase() === "PENDIENTE").length;
