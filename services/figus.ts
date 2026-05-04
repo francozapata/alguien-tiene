@@ -447,13 +447,17 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
     const city = myProfile?.city ?? otherProfile?.city ?? myRequest?.city ?? otherRequest?.city ?? null;
     const neighborhood = myProfile?.neighborhood ?? otherProfile?.neighborhood ?? myRequest?.neighborhood ?? otherRequest?.neighborhood ?? null;
 
-    const { data: existingMatch } = await supabase
+    const { data: existingMatch, error: existingMatchError } = await supabase
       .from("figu_matches")
       .select("id,status,liked_by_user1,liked_by_user2,mutual_interest,rejected_by_user1,rejected_by_user2,hidden_by_user1,hidden_by_user2,trade_applied,user1_confirmed_trade,user2_confirmed_trade")
       .eq("user1_id", user1)
       .eq("user2_id", user2)
       .eq("album_id", albumId)
       .maybeSingle();
+
+    if (existingMatchError) {
+      throw new Error(`No se pudo leer un match existente. Revisá/ejecutá supabase/FIX_MATCHES_REALES_V4.sql. Detalle: ${existingMatchError.message}`);
+    }
 
     const preservedStatus = existingMatch && (existingMatch.mutual_interest || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(existingMatch.status || "")))
       ? existingMatch.status
@@ -495,7 +499,11 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
       .select("*")
       .single();
 
-    if (!error && data) created.push(data);
+    if (error) {
+      throw new Error(`No se pudo crear/actualizar el match real 1x1. Revisá/ejecutá supabase/FIX_MATCHES_REALES_V4.sql. Detalle: ${error.message}`);
+    }
+
+    if (data) created.push(data);
   }
 
   return created;
