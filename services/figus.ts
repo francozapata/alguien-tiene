@@ -999,7 +999,12 @@ async function generateTinderDiscoveryRows(userId: string, albumId: string) {
 
     if (existingMatchError) throw new Error(existingMatchError.message);
 
-    const preservedStatus = existingMatch && (existingMatch.mutual_interest || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(existingMatch.status || "").toUpperCase()))
+    const existingStatus = String(existingMatch?.status || "").toUpperCase();
+    const oldClosedTrade = Boolean(existingMatch?.trade_applied) || ["INTERCAMBIADO", "CANCELADO"].includes(existingStatus);
+
+    // Tinder se recalcula desde el álbum actual. Si una fila vieja quedó cerrada
+    // por pruebas anteriores, no debe matar una tarjeta nueva.
+    const preservedStatus = existingMatch && !oldClosedTrade && (existingMatch.mutual_interest || ["HABLANDO", "ACORDADO"].includes(existingStatus))
       ? existingMatch.status
       : "PENDIENTE";
 
@@ -1019,14 +1024,14 @@ async function generateTinderDiscoveryRows(userId: string, albumId: string) {
       is_active: true,
       liked_by_user1: Boolean(existingMatch?.liked_by_user1),
       liked_by_user2: Boolean(existingMatch?.liked_by_user2),
-      mutual_interest: Boolean(existingMatch?.mutual_interest),
-      rejected_by_user1: Boolean(existingMatch?.rejected_by_user1),
-      rejected_by_user2: Boolean(existingMatch?.rejected_by_user2),
-      hidden_by_user1: Boolean(existingMatch?.hidden_by_user1),
-      hidden_by_user2: Boolean(existingMatch?.hidden_by_user2),
-      trade_applied: Boolean(existingMatch?.trade_applied),
-      user1_confirmed_trade: Boolean(existingMatch?.user1_confirmed_trade),
-      user2_confirmed_trade: Boolean(existingMatch?.user2_confirmed_trade),
+      mutual_interest: oldClosedTrade ? false : Boolean(existingMatch?.mutual_interest),
+      rejected_by_user1: oldClosedTrade ? false : Boolean(existingMatch?.rejected_by_user1),
+      rejected_by_user2: oldClosedTrade ? false : Boolean(existingMatch?.rejected_by_user2),
+      hidden_by_user1: oldClosedTrade ? false : Boolean(existingMatch?.hidden_by_user1),
+      hidden_by_user2: oldClosedTrade ? false : Boolean(existingMatch?.hidden_by_user2),
+      trade_applied: oldClosedTrade ? false : Boolean(existingMatch?.trade_applied),
+      user1_confirmed_trade: oldClosedTrade ? false : Boolean(existingMatch?.user1_confirmed_trade),
+      user2_confirmed_trade: oldClosedTrade ? false : Boolean(existingMatch?.user2_confirmed_trade),
       updated_at: new Date().toISOString(),
     };
 
@@ -1205,30 +1210,25 @@ export async function getMyTinderData(firebaseUser: User) {
   // Las tarjetas salen de matches recalculados en vivo. El status/distancia no debe
   // matar una tarjeta; solo ocultamos lo que ya es chat/match mutuo, intercambio cerrado
   // o lo que el usuario ocultó explícitamente.
-  let tinderCandidates = (enriched as any[]).filter((m) => {
-    if (hiddenByMe(m)) return false;
-    if (isClosedTrade(m)) return false;
-    // No filtramos status HABLANDO/ACORDADO: el modo simple puede abrir contacto
-    // sin que exista match mutuo Tinder. Solo se oculta si Tinder ya fue mutuo.
-    if (isAlreadyTinderMutual(m)) return false;
-
+  const hasUsefulTinderCard = (m: any) => {
     const myGets = isUser1(m) ? m.figus_user1_gets : m.figus_user2_gets;
     const otherGets = isUser1(m) ? m.figus_user2_gets : m.figus_user1_gets;
     const myGetsCount = Array.isArray(myGets) ? myGets.length : 0;
     const otherGetsCount = Array.isArray(otherGets) ? otherGets.length : 0;
+    const kind = String(m._tinderRealtimeKind || "").toUpperCase();
+    return myGetsCount > 0 || otherGetsCount > 0 || kind === "MATCH" || kind === "PARTIAL" || Number(m.match_score ?? 0) > 0;
+  };
 
-    // Para tarjetas Tinder alcanza con que la propuesta tenga algo real que mostrar.
-    // También aceptamos score > 0 para no bloquear tarjetas si una migración vieja
-    // guardó arrays en formato raro; arriba los normalizamos todo lo posible.
-    return myGetsCount > 0 || otherGetsCount > 0 || String(m._tinderRealtimeKind || "") === "PARTIAL" || Number(m.match_score ?? 0) > 0;
+  let tinderCandidates = (enriched as any[]).filter((m) => {
+    if (isAlreadyTinderMutual(m)) return false;
+    if ((hiddenByMe(m) || isClosedTrade(m)) && !hasUsefulTinderCard(m)) return false;
+    return hasUsefulTinderCard(m);
   });
 
-  // Fallback definitivo de Tinder:
-  // Si el recálculo encontró candidatos (enrichedRows > 0) pero el filtro quedó en 0
-  // por datos viejos/incompletos de arrays o estados heredados, igual armamos tarjetas.
-  // Tinder es descubrimiento: no debe quedar vacío si existe otro usuario candidato.
+  // Fallback final: si hay filas recalculadas, Tinder no puede quedar en cero por
+  // estados viejos de pruebas. Mostramos las filas igualmente como tarjetas.
   if (tinderCandidates.length === 0 && (enriched as any[]).length > 0) {
-    tinderCandidates = (enriched as any[]).filter((m) => !isClosedTrade(m));
+    tinderCandidates = (enriched as any[]);
   }
 
   debug.activeRows = tinderCandidates.length;
