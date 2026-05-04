@@ -47,7 +47,7 @@ export default function DescubrirIntercambiosPage() {
       setStats(data.stats);
       setIndex(0);
       setDiscarded([]);
-      setStatus(data.queue.length ? "Modo Tinder: propuestas reales 1x1 ordenadas por likes recibidos, cantidad y cercanía." : "No hay propuestas reales 1x1 por ahora. Revisá que haya usuarios con álbum y repetidas compatibles.");
+      setStatus(data.queue.length ? "Modo Tinder: mazo de figuritas armado desde tu álbum, tus repetidas y otros usuarios compatibles." : "No hay tarjetas Tinder por ahora. Revisá que tu álbum y repetidas estén cargados, y que existan usuarios compatibles.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "No se pudo cargar.");
     }
@@ -208,7 +208,7 @@ export default function DescubrirIntercambiosPage() {
           <h2 className="text-3xl font-black text-[#0D1B2A]">No hay más propuestas por ahora</h2>
           <p className="mt-2 text-sm font-semibold text-slate-500">{status}</p>
           <p className="mx-auto mt-2 max-w-xl text-xs font-bold leading-5 text-slate-400">
-            El modo Tinder se rehizo para usar el mismo match real 1x1 que el modo simple, pero ordenado por likes recibidos, cantidad de intercambios y cercanía.
+            El modo Tinder ahora arma su propio mazo de tarjetas desde álbum + repetidas. El modo simple queda separado.
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-3">
             <button onClick={() => load()} className="rounded-2xl bg-[#0D1B2A] px-5 py-3 text-sm font-black text-white">Revisar de nuevo</button>
