@@ -2,7 +2,7 @@ import { User } from "firebase/auth";
 import { supabase } from "@/lib/supabase";
 import { getOrCreateProfile } from "@/services/profiles";
 import { MUNDIAL_2026_ALBUM_NAME, TOTAL_FIGUS_MUNDIAL } from "@/types/figus";
-import { parseStickerCounts, parseStickerInput, STICKER_CATALOG } from "@/lib/figus/catalog";
+import { formatStickerList, parseStickerCounts, parseStickerInput, STICKER_CATALOG } from "@/lib/figus/catalog";
 import { ensureDailyBenefits, getPlanLimits, normalizeSubscription } from "@/services/subscriptions";
 
 export function serializeFigus(figus: number[]) {
@@ -349,7 +349,7 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
     .update({ is_active: false, updated_at: new Date().toISOString() })
     .eq("album_id", albumId)
     .or(`user1_id.eq.${userId},user2_id.eq.${userId}`)
-    .not("status", "in", "(INTERCAMBIADO,CANCELADO)");
+    .eq("status", "PENDIENTE");
 
   const { data: progressRows, error: progressError } = await supabase
     .from("user_album_progress")
@@ -442,6 +442,18 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
     const city = myProfile?.city ?? otherProfile?.city ?? myRequest?.city ?? otherRequest?.city ?? null;
     const neighborhood = myProfile?.neighborhood ?? otherProfile?.neighborhood ?? myRequest?.neighborhood ?? otherRequest?.neighborhood ?? null;
 
+    const { data: existingMatch } = await supabase
+      .from("figu_matches")
+      .select("id,status,liked_by_user1,liked_by_user2,mutual_interest,rejected_by_user1,rejected_by_user2,hidden_by_user1,hidden_by_user2,trade_applied,user1_confirmed_trade,user2_confirmed_trade")
+      .eq("user1_id", user1)
+      .eq("user2_id", user2)
+      .eq("album_id", albumId)
+      .maybeSingle();
+
+    const preservedStatus = existingMatch?.mutual_interest || ["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(existingMatch?.status || ""))
+      ? existingMatch.status
+      : "PENDIENTE";
+
     const payload = {
       user1_id: user1,
       user2_id: user2,
@@ -454,12 +466,21 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
       match_score: score,
       distance_km: distanceKm,
       meeting_suggestion: suggestMeetingPlace(city, neighborhood),
-      status: "PENDIENTE",
+      status: preservedStatus,
       is_active: true,
-      rejected_by_user1: false,
-      rejected_by_user2: false,
-      hidden_by_user1: false,
-      hidden_by_user2: false,
+      // MUY IMPORTANTE: al recalcular NO borramos likes, descartes ni chats.
+      // Antes el modo Tinder podía romperse porque refreshMyFiguMatches volvía
+      // a poner liked/rejected en false y la cola quedaba inconsistente.
+      liked_by_user1: Boolean(existingMatch?.liked_by_user1),
+      liked_by_user2: Boolean(existingMatch?.liked_by_user2),
+      mutual_interest: Boolean(existingMatch?.mutual_interest),
+      rejected_by_user1: Boolean(existingMatch?.rejected_by_user1),
+      rejected_by_user2: Boolean(existingMatch?.rejected_by_user2),
+      hidden_by_user1: Boolean(existingMatch?.hidden_by_user1),
+      hidden_by_user2: Boolean(existingMatch?.hidden_by_user2),
+      trade_applied: Boolean(existingMatch?.trade_applied),
+      user1_confirmed_trade: Boolean(existingMatch?.user1_confirmed_trade),
+      user2_confirmed_trade: Boolean(existingMatch?.user2_confirmed_trade),
       updated_at: new Date().toISOString(),
     };
 
@@ -473,6 +494,86 @@ export async function generateMatchesForUser(userId: string, albumId: string) {
   }
 
   return created;
+}
+
+
+async function insertFiguSystemMessage(matchId: string, senderId: string, message: string) {
+  const { error } = await supabase.from("figu_chat_messages").insert({ match_id: matchId, sender_id: senderId, message });
+  if (error) throw new Error(error.message);
+}
+
+export async function proposeSimpleFiguExchange(firebaseUser: User, matchId: string) {
+  const profile = await getOrCreateProfile(firebaseUser);
+  await ensureDailyBenefits(profile);
+
+  const { data: freshProfile } = await supabase.from("profiles").select("*").eq("id", profile.id).single();
+  const effectiveProfile = freshProfile ?? profile;
+  const limits = getPlanLimits(normalizeSubscription(effectiveProfile));
+  const maxContacts = limits.manualContactsPerDay;
+  const usedContacts = Number(effectiveProfile.free_profiles_viewed_today ?? 0);
+
+  if (maxContacts !== "Ilimitado" && usedContacts >= maxContacts) {
+    throw new Error(`Llegaste al límite de ${maxContacts} contactos diarios de tu plan.`);
+  }
+
+  const { data: match, error: matchError } = await supabase
+    .from("figu_matches")
+    .select("id,user1_id,user2_id,figus_user1_gets,figus_user2_gets,status,mutual_interest")
+    .eq("id", matchId)
+    .eq("is_active", true)
+    .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+    .single();
+
+  if (matchError || !match) throw new Error(matchError?.message ?? "No tenés acceso a este intercambio.");
+
+  const proposalMatch = match as any;
+  const amUser1 = proposalMatch.user1_id === profile.id;
+  const iGet = amUser1 ? proposalMatch.figus_user1_gets : proposalMatch.figus_user2_gets;
+  const otherGets = amUser1 ? proposalMatch.figus_user2_gets : proposalMatch.figus_user1_gets;
+
+  const { error } = await supabase.from("figu_matches").update({ status: "HABLANDO", updated_at: new Date().toISOString() }).eq("id", matchId);
+  if (error) throw new Error(error.message);
+
+  await insertFiguSystemMessage(matchId, profile.id, `MODERADOR: ${effectiveProfile.display_name || effectiveProfile.email || "Un usuario"} quiere intercambiar con vos. Recibe ${formatStickerList(iGet, 20)} y entrega ${formatStickerList(otherGets, 20)}. Coordiná por este chat en un punto público y, cuando se concrete, presionen “Intercambio realizado, actualizar mi álbum”.`);
+
+  if (maxContacts !== "Ilimitado") {
+    await supabase.from("profiles").update({ free_profiles_viewed_today: usedContacts + 1, plan_updated_at: new Date().toISOString() }).eq("id", profile.id);
+  }
+
+  return { matchId };
+}
+
+export async function confirmFiguExchange(firebaseUser: User, matchId: string) {
+  const profile = await getOrCreateProfile(firebaseUser);
+  const { data: match, error: matchError } = await supabase
+    .from("figu_matches")
+    .select("id,album_id,user1_id,user2_id,user1_confirmed_trade,user2_confirmed_trade,trade_applied")
+    .eq("id", matchId)
+    .eq("is_active", true)
+    .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+    .single();
+
+  if (matchError || !match) throw new Error(matchError?.message ?? "No tenés acceso a este intercambio.");
+  const tradeMatch = match as any;
+  if (tradeMatch.trade_applied) return { completed: true };
+
+  const amUser1 = tradeMatch.user1_id === profile.id;
+  const otherConfirmed = amUser1 ? Boolean(tradeMatch.user2_confirmed_trade) : Boolean(tradeMatch.user1_confirmed_trade);
+  const payload: Record<string, unknown> = { status: otherConfirmed ? "INTERCAMBIADO" : "ACORDADO", updated_at: new Date().toISOString() };
+  if (amUser1) payload.user1_confirmed_trade = true;
+  else payload.user2_confirmed_trade = true;
+
+  const { error } = await supabase.from("figu_matches").update(payload).eq("id", matchId);
+  if (error) throw new Error(error.message);
+
+  if (otherConfirmed) {
+    await applyCompletedFiguTrade(matchId);
+    await insertFiguSystemMessage(matchId, profile.id, "MODERADOR: Ambos usuarios confirmaron el intercambio. Actualizamos automáticamente el álbum y las repetidas de los dos.");
+    return { completed: true };
+  }
+
+  await insertFiguSystemMessage(matchId, profile.id, `MODERADOR: ${profile.display_name || profile.email || "Un usuario"} indicó que el intercambio fue correcto. Si también se concretó para vos, presioná “Intercambio realizado, actualizar mi álbum” para actualizar tu álbum.`);
+  return { completed: false };
 }
 
 export async function updateFiguMatchStatus(firebaseUser: User, matchId: string, status: "PENDIENTE" | "HABLANDO" | "ACORDADO" | "INTERCAMBIADO" | "CANCELADO") {
@@ -541,7 +642,7 @@ async function decrementRepeated(userId: string, albumId: string, figuNumbers: n
 async function applyCompletedFiguTrade(matchId: string) {
   const { data: match, error } = await supabase
     .from("figu_matches")
-    .select("id, album_id, user1_id, user2_id, figus_user1_gets, figus_user2_gets, trade_applied")
+    .select("id, album_id, user1_id, user2_id, figus_user1_gets, figus_user2_gets, trade_applied,user1_confirmed_trade,user2_confirmed_trade")
     .eq("id", matchId)
     .single();
 
@@ -591,9 +692,6 @@ export async function saveFiguReview(firebaseUser: User, matchId: string, input:
   const { error } = await supabase.from("figu_exchange_reviews").upsert({ match_id: matchId, reviewer_id: profile.id, reviewed_user_id: reviewedUserId, rating: Math.max(1, Math.min(5, input.rating)), fulfilled: input.fulfilled, no_show: input.noShow, good_condition: input.goodCondition, comment: input.comment.trim() || null }, { onConflict: "match_id,reviewer_id" });
   if (error) throw new Error(error.message);
 
-  if (input.fulfilled) {
-    await applyCompletedFiguTrade(matchId);
-  }
 }
 
 
@@ -742,6 +840,128 @@ export async function expressFiguInterest(firebaseUser: User, matchId: string) {
   return { match: data, isMutual };
 }
 
+
+
+export async function getMyTinderData(firebaseUser: User) {
+  const profile = await getOrCreateProfile(firebaseUser);
+  const album = await getMundialAlbum();
+  await refreshMyFiguMatches(firebaseUser);
+
+  const { data: freshProfile } = await supabase.from("profiles").select("*").eq("id", profile.id).single();
+  const effectiveProfile = freshProfile ?? profile;
+  const limits = getPlanLimits(normalizeSubscription(effectiveProfile));
+  const maxCards = limits.tinderCardsPerDay === "Ilimitado" ? Number.POSITIVE_INFINITY : limits.tinderCardsPerDay;
+  const maxRadius = limits.radiusKm === "Ilimitado" ? Number.POSITIVE_INFINITY : limits.radiusKm;
+
+  const { data, error } = await supabase
+    .from("figu_matches")
+    .select(`*, user1:profiles!figu_matches_user1_id_fkey(display_name, avatar_url, email), user2:profiles!figu_matches_user2_id_fkey(display_name, avatar_url, email)`)
+    .eq("album_id", album.id)
+    .eq("is_active", true)
+    .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+    .not("status", "in", "(INTERCAMBIADO,CANCELADO)")
+    .order("match_score", { ascending: false })
+    .order("distance_km", { ascending: true, nullsFirst: false })
+    .order("updated_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  const enriched = await enrichMatchesWithReputation(data ?? [], profile.id, album.id);
+  const all = (enriched as any[]).filter((m) => {
+    const distance = m.distance_km ?? Number.POSITIVE_INFINITY;
+    return distance <= maxRadius;
+  });
+
+  const isUser1 = (m: any) => m.user1_id === profile.id;
+  const likedByMe = (m: any) => isUser1(m) ? Boolean(m.liked_by_user1) : Boolean(m.liked_by_user2);
+  const likedByOther = (m: any) => isUser1(m) ? Boolean(m.liked_by_user2) : Boolean(m.liked_by_user1);
+  const rejectedByMe = (m: any) => isUser1(m) ? Boolean(m.rejected_by_user1) : Boolean(m.rejected_by_user2);
+
+  const incomingLikes = all
+    .filter((m) => String(m.status || "PENDIENTE") === "PENDIENTE" && likedByOther(m) && !likedByMe(m) && !rejectedByMe(m) && !m.mutual_interest)
+    .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0));
+
+  const queue = all
+    .filter((m) => String(m.status || "PENDIENTE") === "PENDIENTE" && !likedByMe(m) && !rejectedByMe(m) && !m.mutual_interest)
+    .sort((a, b) => {
+      // Si alguien ya me dio like, aparece primero. Después cantidad/score y cercanía.
+      const likeDiff = Number(likedByOther(b)) - Number(likedByOther(a));
+      if (likeDiff !== 0) return likeDiff;
+      const scoreDiff = (b.match_score ?? 0) - (a.match_score ?? 0);
+      if (scoreDiff !== 0) return scoreDiff;
+      return (a.distance_km ?? 9999) - (b.distance_km ?? 9999);
+    })
+    .slice(0, maxCards);
+
+  const waitingForOther = all.filter((m) => likedByMe(m) && !likedByOther(m) && !m.mutual_interest).length;
+  const mutual = all.filter((m) => Boolean(m.mutual_interest) || ["HABLANDO", "ACORDADO"].includes(String(m.status || ""))).length;
+
+  return {
+    profile,
+    subscription: effectiveProfile,
+    limits,
+    queue,
+    incomingLikes,
+    stats: {
+      incomingLikesCount: incomingLikes.length,
+      waitingForOther,
+      mutual,
+      cardsLimit: limits.tinderCardsPerDay,
+      likesLimit: limits.tinderLikesPerDay,
+      undoLimit: limits.undoPerDay,
+      seeLikes: limits.seeLikes,
+    },
+  };
+}
+
+export async function undoLastTinderAction(firebaseUser: User) {
+  const profile = await getOrCreateProfile(firebaseUser);
+  await ensureDailyBenefits(profile);
+
+  const { data: freshProfile } = await supabase.from("profiles").select("*").eq("id", profile.id).single();
+  const effectiveProfile = freshProfile ?? profile;
+  const limits = getPlanLimits(normalizeSubscription(effectiveProfile));
+
+  if (limits.undoPerDay === 0) {
+    throw new Error("Deshacer está disponible desde el Plan Básico.");
+  }
+
+  const album = await getMundialAlbum();
+  const { data: matches, error } = await supabase
+    .from("figu_matches")
+    .select("id,user1_id,user2_id,liked_by_user1,liked_by_user2,rejected_by_user1,rejected_by_user2,mutual_interest,status,updated_at")
+    .eq("album_id", album.id)
+    .eq("is_active", true)
+    .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+    .order("updated_at", { ascending: false })
+    .limit(30);
+
+  if (error) throw new Error(error.message);
+
+  const target = (matches ?? []).find((m: any) => {
+    const amUser1 = m.user1_id === profile.id;
+    const rejected = amUser1 ? m.rejected_by_user1 : m.rejected_by_user2;
+    const liked = amUser1 ? m.liked_by_user1 : m.liked_by_user2;
+    return !m.mutual_interest && !["HABLANDO", "ACORDADO", "INTERCAMBIADO"].includes(String(m.status || "")) && (rejected || liked);
+  }) as any;
+
+  if (!target) throw new Error("No encontré una acción reciente para deshacer.");
+
+  const amUser1 = target.user1_id === profile.id;
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString(), status: "PENDIENTE" };
+  if (amUser1) {
+    payload.rejected_by_user1 = false;
+    payload.liked_by_user1 = false;
+  } else {
+    payload.rejected_by_user2 = false;
+    payload.liked_by_user2 = false;
+  }
+
+  const { error: updateError } = await supabase.from("figu_matches").update(payload).eq("id", target.id);
+  if (updateError) throw new Error(updateError.message);
+
+  return { restoredMatchId: target.id };
+}
 
 
 export async function getMyFiguChats(firebaseUser: User) {

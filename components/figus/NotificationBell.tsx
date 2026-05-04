@@ -111,7 +111,7 @@ export default function NotificationBell() {
                 Avisos importantes sobre mensajes, matches e intercambios.
               </p>
             </div>
-            <button onClick={() => setOpen(false)} className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-500">✕</button>
+            <div className="flex gap-1"><button onClick={markVisibleAsSeen} className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">Leído todo</button><button onClick={() => setOpen(false)} className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-500">✕</button></div>
           </div>
 
           <div className="mt-4 space-y-3">

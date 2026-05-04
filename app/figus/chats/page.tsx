@@ -73,6 +73,11 @@ export default function FiguChatsPage() {
     return () => window.clearInterval(id);
   }, [user]);
 
+  function markAllAsRead() {
+    markIncomingMessagesSeen(chats.map((chat) => chat.last_message).filter(Boolean) as any[], profileId);
+    setStatus("Mensajes marcados como leídos.");
+  }
+
   const ordered = useMemo(() => [...chats].sort((a, b) => {
     const da = a.last_message?.created_at || a.updated_at || a.created_at;
     const db = b.last_message?.created_at || b.updated_at || b.created_at;
@@ -86,7 +91,7 @@ export default function FiguChatsPage() {
     <FiguShell>
       <div className="mb-5 flex items-center justify-between">
         <Link href="/figus" className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200">← Home Figus</Link>
-        <Link href="/figus/guiado" className="rounded-2xl bg-[#0D1B2A] px-5 py-3 text-sm font-black text-white shadow-sm">Ver usuarios cercanos</Link>
+        <div className="flex flex-wrap gap-2"><button onClick={markAllAsRead} className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-emerald-700 shadow-sm ring-1 ring-emerald-100">Marcar todo leído</button><Link href="/figus/guiado" className="rounded-2xl bg-[#0D1B2A] px-5 py-3 text-sm font-black text-white shadow-sm">Buscar intercambios</Link></div>
       </div>
 
       <section className="rounded-[2.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200/70">

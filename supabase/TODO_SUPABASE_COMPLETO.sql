@@ -1692,3 +1692,8 @@ for select
 using (user_id in (select id from public.profiles where firebase_uid = auth.uid()::text));
 
 -- Las inserciones/updates las hace el servidor con SUPABASE_SERVICE_ROLE_KEY.
+
+-- Confirmación bilateral de intercambio de figuritas
+alter table public.figu_matches add column if not exists user1_confirmed_trade boolean not null default false;
+alter table public.figu_matches add column if not exists user2_confirmed_trade boolean not null default false;
+create index if not exists idx_figu_matches_confirm_trade on public.figu_matches(user1_confirmed_trade, user2_confirmed_trade);

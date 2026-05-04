@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { FiguShell } from "@/components/figus/FiguShell";
 import { FiguChatMessage, FiguMatch } from "@/types/figus";
-import { getMatchWithMessages, hideFiguChat, reportFiguUser, saveFiguReview, sendFiguMessage } from "@/services/figus";
+import { confirmFiguExchange, getMatchWithMessages, hideFiguChat, reportFiguUser, saveFiguReview, sendFiguMessage } from "@/services/figus";
 import { notifyLocalMatch } from "@/utils/notifications";
 import { supabase } from "@/lib/supabase";
 import { formatStickerList } from "@/lib/figus/catalog";
@@ -140,11 +140,16 @@ export default function FiguChatPage() {
   async function markReview(kind: "ok" | "noshow") {
     if (!user) return;
     try {
-      await saveFiguReview(user, matchId, { rating: kind === "ok" ? 5 : 1, fulfilled: kind === "ok", noShow: kind === "noshow", goodCondition: kind === "ok", comment: kind === "ok" ? "Intercambio realizado correctamente." : "La otra persona no se presentó." });
-      setReviewStatus(kind === "ok" ? "Intercambio cumplido. Álbum y repetidas actualizados automáticamente." : "Reputación guardada.");
-
+      if (kind === "ok") {
+        const result = await confirmFiguExchange(user, matchId);
+        setReviewStatus(result.completed ? "Intercambio confirmado por ambos. Álbum y repetidas actualizados." : "Listo. Le avisamos a la otra persona para que confirme y recién ahí se actualiza el álbum de ambos.");
+        await load();
+        return;
+      }
+      await saveFiguReview(user, matchId, { rating: 1, fulfilled: false, noShow: true, goodCondition: false, comment: "La otra persona no se presentó." });
+      setReviewStatus("Reputación guardada.");
     } catch (error) {
-      setReviewStatus(error instanceof Error ? error.message : "No se pudo guardar la reputación.");
+      setReviewStatus(error instanceof Error ? error.message : "No se pudo guardar.");
     }
   }
 
@@ -193,11 +198,11 @@ export default function FiguChatPage() {
         <aside className="space-y-5">
           <div className="rounded-[2rem] bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
             <h3 className="text-xl font-black text-[#0D1B2A]">Intercambio</h3>
-            <div className="mt-3 rounded-3xl bg-slate-50 p-4"><p className="text-sm font-black">Estado</p><p className="mt-2 text-sm font-semibold text-slate-700">Chat abierto para coordinar. Si marcás “Cumplió”, se actualizan automáticamente los álbumes y repetidas.</p></div>
+            <div className="mt-3 rounded-3xl bg-slate-50 p-4"><p className="text-sm font-black">Estado</p><p className="mt-2 text-sm font-semibold text-slate-700">Chat abierto para coordinar. El álbum se actualiza recién cuando ambos presionan “Intercambio realizado, actualizar mi álbum”.</p></div>
             <div className="mt-4 rounded-3xl bg-emerald-50 p-4"><p className="text-sm font-black">Vos recibís</p><p className="mt-2 text-sm font-semibold text-slate-700">{formatStickerList(iGet, 12)}</p></div>
             <div className="mt-3 rounded-3xl bg-sky-50 p-4"><p className="text-sm font-black">La otra persona recibe</p><p className="mt-2 text-sm font-semibold text-slate-700">{formatStickerList(otherGets, 12)}</p></div>
             <div className="mt-3 rounded-3xl bg-amber-50 p-4"><p className="text-sm font-black">Encuentro sugerido</p><p className="mt-2 text-sm font-semibold text-slate-700">{match?.meeting_suggestion || "Punto público y seguro."}</p><p className="mt-2 text-xs font-black text-emerald-700">📍 {distanceLabel(match?.distance_km)}</p></div>
-            <div className="mt-3 rounded-3xl bg-violet-50 p-4"><p className="text-sm font-black">Reputación</p><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => markReview("ok")} className="rounded-2xl bg-[#22C55E] px-3 py-2 text-xs font-black text-white">Cumplió</button><button onClick={() => markReview("noshow")} className="rounded-2xl bg-red-600 px-3 py-2 text-xs font-black text-white">No apareció</button></div><button onClick={reportUser} className="mt-2 w-full rounded-2xl bg-orange-500 px-3 py-2 text-xs font-black text-white">Reportar usuario</button><button onClick={deleteChat} className="mt-2 w-full rounded-2xl bg-red-50 px-3 py-2 text-xs font-black text-red-700 ring-1 ring-red-100">Borrar chat de mi lista</button><p className="mt-2 text-xs font-bold text-slate-500">{reviewStatus}</p></div>
+            <div className="mt-3 rounded-3xl bg-violet-50 p-4"><p className="text-sm font-black">Reputación</p><div className="mt-3 grid grid-cols-2 gap-2"><button onClick={() => markReview("ok")} className="rounded-2xl bg-[#22C55E] px-3 py-2 text-xs font-black text-white">Intercambio realizado</button><button onClick={() => markReview("noshow")} className="rounded-2xl bg-red-600 px-3 py-2 text-xs font-black text-white">No apareció</button></div><button onClick={reportUser} className="mt-2 w-full rounded-2xl bg-orange-500 px-3 py-2 text-xs font-black text-white">Reportar usuario</button><button onClick={deleteChat} className="mt-2 w-full rounded-2xl bg-red-50 px-3 py-2 text-xs font-black text-red-700 ring-1 ring-red-100">Borrar chat de mi lista</button><p className="mt-2 text-xs font-bold text-slate-500">{reviewStatus}</p></div>
           </div>
         </aside>
       </div>

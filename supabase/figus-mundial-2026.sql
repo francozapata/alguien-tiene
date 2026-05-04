@@ -369,3 +369,8 @@ select
   count(*) filter (where good_condition)::int as good_condition_count
 from public.figu_exchange_reviews
 group by reviewed_user_id;
+
+-- Confirmación bilateral de intercambio de figuritas
+alter table public.figu_matches add column if not exists user1_confirmed_trade boolean not null default false;
+alter table public.figu_matches add column if not exists user2_confirmed_trade boolean not null default false;
+create index if not exists idx_figu_matches_confirm_trade on public.figu_matches(user1_confirmed_trade, user2_confirmed_trade);

@@ -7,7 +7,7 @@ import { FiguShell } from "@/components/figus/FiguShell";
 import PermissionsPanel from "@/components/figus/PermissionsPanel";
 import RequiredLocationGate from "@/components/figus/RequiredLocationGate";
 import { refreshSmartLocation, syncStoredLocation } from "@/utils/location";
-import { getMyMatches, refreshMyFiguMatches } from "@/services/figus";
+import { getMyMatches, proposeSimpleFiguExchange, refreshMyFiguMatches } from "@/services/figus";
 import { FiguMatch } from "@/types/figus";
 import { formatStickerList } from "@/lib/figus/catalog";
 import { getMySubscription, getPlanLimits } from "@/services/subscriptions";
@@ -55,6 +55,7 @@ export default function CaminoGuiadoUsuariosPage() {
   const [sortMode, setSortMode] = useState<SortMode>("DISTANCIA");
   const [status, setStatus] = useState("Buscando usuarios cercanos...");
   const [refreshing, setRefreshing] = useState(false);
+  const [contactingId, setContactingId] = useState<string | null>(null);
 
   async function load() {
     if (!user) return;
@@ -70,7 +71,7 @@ export default function CaminoGuiadoUsuariosPage() {
       if (radiusKm > allowedRadius) setRadiusKm(allowedRadius);
       setProfileId(data.profile.id);
       const filteredMatches = (data.matches as FiguMatch[]).filter((m) => {
-        if (["INTERCAMBIADO", "CANCELADO"].includes(m.status)) return false;
+        if (["HABLANDO", "ACORDADO", "INTERCAMBIADO", "CANCELADO"].includes(m.status)) return false;
         const amUser1 = m.user1_id === data.profile.id;
         if (amUser1 && m.rejected_by_user1) return false;
         if (!amUser1 && m.rejected_by_user2) return false;
@@ -111,6 +112,20 @@ export default function CaminoGuiadoUsuariosPage() {
     }
   }
 
+  async function contact(matchId: string) {
+    if (!user) return;
+    setContactingId(matchId);
+    setStatus("Abriendo chat y enviando propuesta automática...");
+    try {
+      await proposeSimpleFiguExchange(user, matchId);
+      window.location.href = `/figus/chat/${matchId}`;
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "No se pudo contactar.");
+    } finally {
+      setContactingId(null);
+    }
+  }
+
   const sorted = useMemo(() => {
     const copy = [...matches];
     copy.sort((a, b) => {
@@ -136,17 +151,17 @@ export default function CaminoGuiadoUsuariosPage() {
         <PermissionsPanel />
 
         <div className="mb-5 flex items-center justify-between">
-          <Link href="/figus/solicitud" className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200">← Checkpoint</Link>
+          <Link href="/figus" className="rounded-2xl bg-white px-5 py-3 text-sm font-black text-slate-700 shadow-sm ring-1 ring-slate-200">← Home Figus</Link>
           <Link href="/figus" className="rounded-2xl bg-[#0D1B2A] px-5 py-3 text-sm font-black text-white shadow-sm">Home Figus →</Link>
         </div>
 
         <section className="rounded-[2.5rem] bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2563EB]">Paso 3 de 3</p>
-              <h1 className="mt-1 text-4xl font-black text-[#0D1B2A]">Usuarios cercanos</h1>
+              <p className="text-sm font-black uppercase tracking-[0.25em] text-[#2563EB]">Buscar intercambios</p>
+              <h1 className="mt-1 text-4xl font-black text-[#0D1B2A]">Intercambios posibles</h1>
               <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-slate-500">
-                Modo simple/manual: muestra todas las combinaciones reales 1x1 disponibles dentro del radio y límites de tu plan.
+                Muestra directamente personas con intercambio real. Siempre es mano a mano: recibís y entregás la misma cantidad de figuritas.
               </p>
             </div>
 
@@ -235,9 +250,9 @@ export default function CaminoGuiadoUsuariosPage() {
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        <Link href={`/figus/chat/${match.id}`} className="rounded-2xl bg-[#0D1B2A] px-5 py-3 text-center text-sm font-black text-white">
-                          Contactar
-                        </Link>
+                        <button onClick={() => contact(match.id)} disabled={contactingId === match.id} className="rounded-2xl bg-[#0D1B2A] px-5 py-3 text-center text-sm font-black text-white disabled:opacity-60">
+                          {contactingId === match.id ? "Abriendo..." : "Proponer intercambio"}
+                        </button>
                         <Link href="/figus/descubrir" className="rounded-2xl bg-white px-5 py-3 text-center text-sm font-black text-[#0D1B2A] ring-1 ring-slate-200">
                           Ver modo rápido
                         </Link>

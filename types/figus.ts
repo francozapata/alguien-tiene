@@ -35,6 +35,10 @@ export type FiguMatch = {
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
+  user1_confirmed_trade?: boolean | null;
+  user2_confirmed_trade?: boolean | null;
+  trade_applied?: boolean | null;
+  trade_applied_at?: string | null;
   liked_by_user1?: boolean | null;
   liked_by_user2?: boolean | null;
   mutual_interest?: boolean | null;
